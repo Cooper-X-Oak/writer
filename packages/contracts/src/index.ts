@@ -1,7 +1,9 @@
 // @app/contracts — the ONLY shared surface between web and daemon.
 //
-// Placeholder. Filled by P0-2 (Health + stub Project DTOs). Policy: plain TS interfaces for
-// internal API DTOs; zod schemas only for untrusted external input (scraped content, etc.).
-// See docs/issues-phase-0-1.md.
+// Policy: plain TS interfaces for internal API DTOs; zod schemas only for untrusted external
+// input (scraped content, plugin manifests, etc. — added in later phases). See PLAN.md §2.4.
 
 export const CONTRACTS_PACKAGE = '@app/contracts';
+
+export type { Health } from './api/health.js';
+export type { Project } from './api/project.js';
