@@ -2,11 +2,25 @@
 
 import express from 'express';
 import type { Express } from 'express';
+import cors from 'cors';
 import { logger } from './logger.js';
 import { healthRouter } from './api/health.js';
 
+// Local-first: the daemon is loopback-only, but the Electron renderer / Next dev server is a
+// *different* origin (e.g. http://localhost:3000) calling http://127.0.0.1:4319 — cross-origin.
+// Allow only loopback browser origins; requests with no Origin (curl, Electron main) pass through.
+const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
 export function createServer(): Express {
   const app = express();
+  app.use(
+    cors({
+      origin(origin, cb) {
+        if (!origin || LOOPBACK_ORIGIN.test(origin)) cb(null, true);
+        else cb(new Error(`origin not allowed: ${origin}`));
+      },
+    }),
+  );
   app.use(express.json());
   app.use((req, _res, next) => {
     logger.debug({ method: req.method, url: req.url }, 'request');

@@ -13,11 +13,14 @@
   },
   "dependencies": {
     "@app/contracts": "workspace:*",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "pino": "^9.5.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
     "tsx": "^4.19.0"
   }
 }
