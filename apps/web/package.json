@@ -4,9 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "next build",
+    "dev": "next dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "echo '[web] Next.js App Router app lands in P0-4'",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf .next dist"
+  },
+  "dependencies": {
+    "@app/contracts": "workspace:*",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
   }
 }

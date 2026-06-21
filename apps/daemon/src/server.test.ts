@@ -34,4 +34,17 @@ describe('daemon /api/health', () => {
       close();
     }
   });
+
+  it('allows loopback browser origins (CORS)', async () => {
+    const { port, close } = await listen();
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        headers: { Origin: 'http://localhost:3000' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+    } finally {
+      close();
+    }
+  });
 });
