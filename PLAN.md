@@ -165,7 +165,7 @@ hotspot-writer/
 
 | Risk | Level | Decision / mitigation | Phase |
 |---|---|---|---|
-| **Delegate-CLI stream contract unverified** (stdin `stream-json` envelope; keeping stdin open across `tool_use`; cross-version parsing) | CRITICAL | **Highest-risk unknown — PoC first.** 1–2 day spike against the real CLI before building the runner/parser. See [`docs/agent-layer.md`](docs/agent-layer.md) (PoC-0). | PoC-0 / 1 |
+| **Delegate-CLI stream contract** (stdin `stream-json` envelope; keeping stdin open across turns; cross-version parsing) | CRITICAL → **validated** | **PoC-0 done** ([`poc/cli-stream/`](poc/cli-stream/README.md)): envelope accepted, mid-session injection works with stable `session_id`, full taxonomy mapped (0 unknowns). Residual notes for P1: `bypassPermissions` rejected under root; `--include-partial-messages` duplicates text; surface `rate_limit_event`. | PoC-0 ✓ / 1 |
 | User has no Claude Code → core unusable | CRITICAL | First-run `registry.detect()` → guided page with precise diagnosis (not installed / not on PATH / too old / not logged in) + install link + verify button. Any one CLI available unblocks. | 1 |
 | X/Twitter ToS / account ban | CRITICAL | RSS + HN (public feeds) as MVP primary, no ToS risk. X list marked "experimental, use at own risk". Playwright persistent user-data-dir, in-app manual login once (no password storage, no fake login). Low-freq patrol (≥15 min) with jitter. | 7 |
 | BYOK key leak | CRITICAL | fal.ai key encrypted via Electron `safeStorage` (DPAPI/Keychain-backed), decrypted in main process at call time, never in SQLite plaintext or logs. See [`docs/windows-compat.md`](docs/windows-compat.md#45-falai-key-storage-byok). | 5 |
