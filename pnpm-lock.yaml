@@ -32,6 +32,9 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@app/agent-defs':
+        specifier: workspace:*
+        version: link:../../packages/agent-defs
       '@app/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

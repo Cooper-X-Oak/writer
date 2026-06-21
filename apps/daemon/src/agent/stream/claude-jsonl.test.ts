@@ -39,8 +39,8 @@ describe('createClaudeStreamParser', () => {
       }),
     );
     expect(events).toEqual([
-      { kind: 'text_delta', text: 'hi' },
-      { kind: 'thinking_delta', text: 'hmm' },
+      { kind: 'text_delta', text: 'hi', source: 'message' },
+      { kind: 'thinking_delta', text: 'hmm', source: 'message' },
       { kind: 'tool_use', id: 't1', name: 'Bash', input: { cmd: 'ls' } },
       { kind: 'turn_end', stopReason: 'end_turn' },
       { kind: 'usage', usage: { output_tokens: 3 } },
@@ -52,8 +52,8 @@ describe('createClaudeStreamParser', () => {
       line({ type: 'assistant', message: { content: [{ type: 'text' }, { type: 'thinking' }] } }),
     );
     expect(events).toEqual([
-      { kind: 'text_delta', text: '' },
-      { kind: 'thinking_delta', text: '' },
+      { kind: 'text_delta', text: '', source: 'message' },
+      { kind: 'thinking_delta', text: '', source: 'message' },
     ]);
   });
 
@@ -83,8 +83,8 @@ describe('createClaudeStreamParser', () => {
       line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'z' } } });
     const { events, taxonomy } = run(input);
     expect(events).toEqual([
-      { kind: 'text_delta', text: 'a' },
-      { kind: 'thinking_delta', text: 'b' },
+      { kind: 'text_delta', text: 'a', source: 'stream' },
+      { kind: 'thinking_delta', text: 'b', source: 'stream' },
       { kind: 'tool_input_delta', partial: '{"x":1}' },
     ]);
     expect(taxonomy['stream_event/content_block_delta/signature_delta']).toBe(1);
@@ -149,7 +149,7 @@ describe('createClaudeStreamParser', () => {
     const whole = run(input).events;
     const fragmented = run(input, 1).events;
     expect(fragmented).toEqual(whole);
-    expect(fragmented[0]).toEqual({ kind: 'text_delta', text: 'hello' });
+    expect(fragmented[0]).toEqual({ kind: 'text_delta', text: 'hello', source: 'stream' });
   });
 
   it('handles multiple events in a single chunk and a trailing unterminated line via flush', () => {

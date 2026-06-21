@@ -12,6 +12,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@app/agent-defs": "workspace:*",
     "@app/contracts": "workspace:*",
     "cors": "^2.8.5",
     "express": "^5.1.0",
