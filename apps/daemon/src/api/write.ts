@@ -11,11 +11,13 @@ import type { WriteStreamEvent } from '@app/contracts';
 import { startAgentRun, type AgentRunHandle } from '../agent/runner.js';
 import { buildWritePrompt } from '../agent/prompt.js';
 import { buildDiagnosis } from '../agent/diagnose.js';
+import { defaultProjectStore } from '../workspace/store.js';
 
 export interface WriteCallbacks {
   onStatus: (message: string) => void;
   onDelta: (text: string) => void;
-  onDone: (costUsd?: number) => void;
+  /** projectId is the persisted draft's id, omitted if nothing was saved. */
+  onDone: (costUsd?: number, projectId?: string) => void;
   onError: (message: string) => void;
 }
 
@@ -31,6 +33,8 @@ export interface EngineDeps {
   spawnImpl?: typeof nodeSpawn;
   shell?: boolean;
   inactivityMs?: number;
+  /** Persist the finished draft; defaults to the shared filesystem store. Injectable for tests. */
+  persist?: (input: { topic: string; body: string }) => Promise<{ id: string }>;
 }
 
 const STDERR_TAIL_MAX = 500;
@@ -41,18 +45,35 @@ const DEFAULT_INACTIVITY_MS = 120_000;
 // failure or abnormal exit becomes onError, NOT a silent onDone.
 export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
   const detect = deps.detect ?? (() => detectAgent(claudeCode));
+  const persist = deps.persist ?? ((input) => defaultProjectStore.create(input));
   return (topic, cb) => {
     let aborted = false;
     let errored = false;
     let gotResult = false;
     let costUsd: number | undefined;
     let stderrTail = '';
+    let draft = '';
     let run: AgentRunHandle | undefined;
 
     const fail = (message: string): void => {
       if (errored) return;
       errored = true;
       cb.onError(message);
+    };
+
+    // Persist the streamed draft, then report done. A save failure is non-fatal — the user already
+    // saw the draft — so surface it as a status note and still finish (never silently swallow it).
+    const finishOk = (): void => {
+      if (!draft.trim()) {
+        cb.onDone(costUsd);
+        return;
+      }
+      persist({ topic, body: draft })
+        .then((project) => cb.onDone(costUsd, project.id))
+        .catch((err: unknown) => {
+          cb.onStatus(`draft not saved: ${err instanceof Error ? err.message : String(err)}`);
+          cb.onDone(costUsd);
+        });
     };
 
     void (async () => {
@@ -73,8 +94,10 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
         shell: deps.shell,
         inactivityMs: deps.inactivityMs ?? DEFAULT_INACTIVITY_MS,
         onEvent: (e) => {
-          if (e.kind === 'text_delta') cb.onDelta(e.text);
-          else if (e.kind === 'error') fail(e.message || 'the agent stream errored');
+          if (e.kind === 'text_delta') {
+            draft += e.text;
+            cb.onDelta(e.text);
+          } else if (e.kind === 'error') fail(e.message || 'the agent stream errored');
           else if (e.kind === 'result') {
             gotResult = true;
             costUsd = e.costUsd;
@@ -87,7 +110,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
         onExit: (info) => {
           if (errored || aborted || info.aborted) return;
           if (gotResult && info.code === 0) {
-            cb.onDone(costUsd);
+            finishOk();
           } else {
             const tail = stderrTail.trim().slice(-200);
             cb.onError(`the agent exited unexpectedly (code ${info.code ?? 'null'})${tail ? `: ${tail}` : ''}`);
@@ -144,8 +167,8 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
     const handle = engine(topic, {
       onStatus: (message) => send({ type: 'status', message }),
       onDelta: (text) => send({ type: 'delta', text }),
-      onDone: (cost) => {
-        send({ type: 'done', costUsd: cost });
+      onDone: (cost, projectId) => {
+        send({ type: 'done', costUsd: cost, projectId });
         end();
       },
       onError: (message) => {

@@ -1,0 +1,42 @@
+// Workspace path layout. A project = a directory; its files = artifacts; a sidecar manifest.json
+// describes it. Directory names are short ids (NOT the topic) to dodge Windows ENAMETOOLONG/illegal
+// chars. Pure path helpers + an id generator; the store does the IO.
+
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+
+export const MANIFEST_FILE = 'manifest.json';
+export const ARTIFACT_FILE = 'article.html';
+
+/** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
+export function dataDir(): string {
+  return process.env.HOTSPOT_DATA_DIR ?? join(homedir(), '.hotspot-writer');
+}
+
+export function projectsRoot(base: string = dataDir()): string {
+  return join(base, 'projects');
+}
+
+export function projectDir(root: string, id: string): string {
+  return join(root, id);
+}
+
+export function manifestPath(dir: string): string {
+  return join(dir, MANIFEST_FILE);
+}
+
+export function artifactPath(dir: string): string {
+  return join(dir, ARTIFACT_FILE);
+}
+
+/** Short, time-sortable, collision-resistant id: base36 millis + 8 random hex. Kept short for
+ *  Windows path-length headroom. `now` is injectable so the store can be tested deterministically. */
+export function createProjectId(now: number = Date.now()): string {
+  return `${now.toString(36)}-${randomBytes(4).toString('hex')}`;
+}
+
+/** A project id only ever names one path segment. Reject anything that could traverse or escape. */
+export function isSafeProjectId(id: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(id) && id !== '.' && id !== '..';
+}

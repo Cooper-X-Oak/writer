@@ -36,14 +36,21 @@ const READY: DetectResult = { state: 'READY', version: '2.1.185' };
 interface Captured {
   status: string[];
   deltas: string[];
-  done: { called: boolean; cost?: number };
+  done: { called: boolean; cost?: number; projectId?: string };
   error?: string;
+  persisted: { topic: string; body: string }[];
+}
+
+interface RunOpts {
+  /** Override the injected persist; default records the call and returns a fixed id. */
+  persist?: (input: { topic: string; body: string }) => Promise<{ id: string }>;
 }
 
 // Run the engine against a fake spawn; `script` drives the captured child once it's spawned.
 async function run(
   detectResult: DetectResult,
   script: (child: ReturnType<typeof fakeChild>) => void,
+  opts: RunOpts = {},
 ): Promise<Captured> {
   let child: ReturnType<typeof fakeChild> | undefined;
   const spawnImpl = ((..._a: unknown[]) => {
@@ -51,20 +58,30 @@ async function run(
     return child;
   }) as unknown as typeof nodeSpawn;
 
+  const cap: Captured = { status: [], deltas: [], done: { called: false }, persisted: [] };
+
+  // Default persist never touches the filesystem — it records and returns a fixed id.
+  const persist =
+    opts.persist ??
+    ((input: { topic: string; body: string }) => {
+      cap.persisted.push(input);
+      return Promise.resolve({ id: 'saved-id' });
+    });
+
   const engine = createDefaultEngine({
     detect: () => Promise.resolve(detectResult),
     spawnImpl,
     shell: false,
     inactivityMs: 0,
+    persist,
   });
 
-  const cap: Captured = { status: [], deltas: [], done: { called: false } };
   await new Promise<void>((resolve) => {
     engine('热点主题', {
       onStatus: (m) => cap.status.push(m),
       onDelta: (t) => cap.deltas.push(t),
-      onDone: (cost) => {
-        cap.done = { called: true, cost };
+      onDone: (cost, projectId) => {
+        cap.done = { called: true, cost, projectId };
         resolve();
       },
       onError: (m) => {
@@ -86,7 +103,7 @@ const resultLine = (isError: boolean, cost = 0.05) =>
   JSON.stringify({ type: 'result', subtype: isError ? 'error' : 'success', total_cost_usd: cost, is_error: isError }) + '\n';
 
 describe('createDefaultEngine — terminal status mapping', () => {
-  it('streams deltas then done(cost) on a clean exit with a result', async () => {
+  it('streams deltas then done(cost, projectId) on a clean exit, persisting the draft', async () => {
     const cap = await run(READY, (child) => {
       child.stdout.emit('data', textDelta('初级程序员'));
       child.stdout.emit('data', textDelta('的价值'));
@@ -95,7 +112,33 @@ describe('createDefaultEngine — terminal status mapping', () => {
     });
     expect(cap.status).toEqual(['checking agent', 'writing']);
     expect(cap.deltas.join('')).toBe('初级程序员的价值');
-    expect(cap.done).toEqual({ called: true, cost: 0.07 });
+    expect(cap.done).toEqual({ called: true, cost: 0.07, projectId: 'saved-id' });
+    expect(cap.error).toBeUndefined();
+    // the persisted body is the full accumulated draft, against the original topic
+    expect(cap.persisted).toEqual([{ topic: '热点主题', body: '初级程序员的价值' }]);
+  });
+
+  it('does not persist (or report a projectId) when the draft is empty', async () => {
+    const cap = await run(READY, (child) => {
+      child.stdout.emit('data', resultLine(false, 0.01));
+      child.emit('close', 0, null);
+    });
+    expect(cap.done).toEqual({ called: true, cost: 0.01, projectId: undefined });
+    expect(cap.persisted).toEqual([]);
+  });
+
+  it('still reports done (with a status note) when saving fails — never silently swallowed', async () => {
+    const cap = await run(
+      READY,
+      (child) => {
+        child.stdout.emit('data', textDelta('正文'));
+        child.stdout.emit('data', resultLine(false, 0.03));
+        child.emit('close', 0, null);
+      },
+      { persist: () => Promise.reject(new Error('disk full')) },
+    );
+    expect(cap.done).toEqual({ called: true, cost: 0.03, projectId: undefined });
+    expect(cap.status.some((s) => s.includes('draft not saved') && s.includes('disk full'))).toBe(true);
     expect(cap.error).toBeUndefined();
   });
 
