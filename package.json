@@ -11,11 +11,12 @@
     "dev": "turbo run dev",
     "typecheck": "turbo run typecheck",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "clean": "turbo run clean"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "eslint": "^9.17.0",
     "turbo": "^2.5.0",
     "typescript": "^5.7.0",
