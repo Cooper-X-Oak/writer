@@ -102,7 +102,11 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
-  packages/agent-defs: {}
+  packages/agent-defs:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.0
 
   packages/contracts: {}
 
