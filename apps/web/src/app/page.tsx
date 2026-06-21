@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Health } from '@app/contracts';
 import { getHealth } from '../lib/api/health';
+import { AgentGuide } from '../components/agent-guide';
 
 type State =
   | { kind: 'loading' }
@@ -38,6 +39,7 @@ export default function Home() {
         </p>
       )}
       {state.kind === 'error' && <p>daemon unreachable: {state.message}</p>}
+      <AgentGuide />
     </main>
   );
 }

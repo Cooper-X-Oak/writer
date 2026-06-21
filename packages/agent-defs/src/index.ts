@@ -4,5 +4,5 @@
 export type { RuntimeAgentDef, RuntimeModelOption, RuntimeBuildContext } from './types.js';
 export { RuntimePromptBudgetError } from './types.js';
 export { claudeCode, isRootProcess } from './defs/claude-code.js';
-export { detectAgent, parseSemver } from './detect.js';
+export { detectAgent, parseSemver, defaultResolveBin } from './detect.js';
 export type { DetectState, DetectResult, DetectDeps, RunFn, RunResult } from './detect.js';

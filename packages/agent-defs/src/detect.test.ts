@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectAgent, parseSemver, type RunFn } from './detect.js';
+import { detectAgent, parseSemver, defaultResolveBin, type RunFn } from './detect.js';
 import { claudeCode } from './defs/claude-code.js';
 
 interface Canned {
@@ -30,12 +30,12 @@ describe('detectAgent', () => {
     expect(r.state).toBe('NOT_INSTALLED');
   });
 
-  it('NOT_ON_PATH when the version probe fails', async () => {
+  it('VERSION_PROBE_FAILED when the binary is found but --version fails', async () => {
     const r = await detectAgent(claudeCode, {
       resolveBin: resolved,
-      run: runner({ version: { code: 127, stderr: 'command not found' } }),
+      run: runner({ version: { code: 1, stderr: 'segfault' } }),
     });
-    expect(r.state).toBe('NOT_ON_PATH');
+    expect(r.state).toBe('VERSION_PROBE_FAILED');
   });
 
   it('TOO_OLD when below minVersion', async () => {
@@ -76,11 +76,30 @@ describe('detectAgent', () => {
     expect(r.state).toBe('READY');
   });
 
-  it('covers the default exec path against a real process (node --version)', async () => {
-    // No injected deps → default resolver returns the bin as-is, default runner spawns it.
+  it('covers the default runner against a real process (node --version)', async () => {
+    // Inject only the resolver; the default runner spawns node --version for real.
     const nodeDef = { ...claudeCode, bin: process.execPath, authProbe: undefined };
-    const r = await detectAgent(nodeDef);
+    const r = await detectAgent(nodeDef, { resolveBin: () => process.execPath });
     expect(r.state).toBe('READY');
     expect(r.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('NOT_INSTALLED through the real which/where resolver for a bogus bin', async () => {
+    const r = await detectAgent({ ...claudeCode, bin: 'definitely-not-a-real-bin-xyz', fallbackBins: [] });
+    expect(r.state).toBe('NOT_INSTALLED');
+  });
+});
+
+describe('defaultResolveBin', () => {
+  it('resolves a binary that is on PATH (node)', async () => {
+    expect(await defaultResolveBin('node')).toBeTruthy();
+  });
+
+  it('returns undefined for a nonexistent binary', async () => {
+    expect(await defaultResolveBin('definitely-not-a-real-bin-xyz')).toBeUndefined();
+  });
+
+  it('falls back to the next candidate', async () => {
+    expect(await defaultResolveBin('definitely-not-a-real-bin-xyz', ['node'])).toBeTruthy();
   });
 });

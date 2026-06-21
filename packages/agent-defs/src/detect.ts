@@ -5,7 +5,7 @@
 import { execFile } from 'node:child_process';
 import type { RuntimeAgentDef } from './types.js';
 
-export type DetectState = 'NOT_INSTALLED' | 'NOT_ON_PATH' | 'TOO_OLD' | 'NOT_LOGGED_IN' | 'READY';
+export type DetectState = 'NOT_INSTALLED' | 'VERSION_PROBE_FAILED' | 'TOO_OLD' | 'NOT_LOGGED_IN' | 'READY';
 
 export interface DetectResult {
   state: DetectState;
@@ -48,19 +48,36 @@ const defaultRun: RunFn = (cmd, args, timeoutMs) =>
     });
   });
 
+/** Resolve a bin (or its fallbacks) to an absolute path using `where` (Windows) / `which` (POSIX).
+ *  `where` may print several lines — the first hit wins. Returns undefined if none resolve. */
+export async function defaultResolveBin(bin: string, fallbacks: string[] = []): Promise<string | undefined> {
+  const finder = process.platform === 'win32' ? 'where' : 'which';
+  for (const candidate of [bin, ...fallbacks]) {
+    const hit = await new Promise<string | undefined>((resolve) => {
+      execFile(finder, [candidate], { timeout: 5000 }, (err, stdout) => {
+        if (err) return resolve(undefined);
+        const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
+        resolve(first ?? undefined);
+      });
+    });
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 const NOT_LOGGED_IN = /not logged in|unauthorized|no api key|invalid api key|please run .*login|login required/i;
 
 export async function detectAgent(def: RuntimeAgentDef, deps: DetectDeps = {}): Promise<DetectResult> {
   const run = deps.run ?? defaultRun;
-  // Default resolver assumes the bin is on PATH; the daemon injects a real which/where resolver.
-  const resolveBin = deps.resolveBin ?? ((bin: string) => bin);
+  const resolveBin = deps.resolveBin ?? defaultResolveBin;
 
   const resolved = await resolveBin(def.bin, def.fallbackBins ?? []);
   if (!resolved) return { state: 'NOT_INSTALLED', detail: `${def.bin} not found on PATH` };
 
   const v = await run(resolved, def.versionArgs, def.versionProbeTimeoutMs ?? 5000);
   if (v.code !== 0) {
-    return { state: 'NOT_ON_PATH', detail: v.stderr.trim() || 'version probe failed' };
+    // Found on PATH but the binary failed to report a version — broken / incompatible install.
+    return { state: 'VERSION_PROBE_FAILED', detail: v.stderr.trim() || 'version probe failed' };
   }
   const parsed = parseSemver(v.stdout);
   const version = parsed ? parsed.join('.') : undefined;
