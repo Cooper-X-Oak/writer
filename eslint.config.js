@@ -7,6 +7,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/.next/**',
       '**/.turbo/**',
+      '**/coverage/**',
       '**/node_modules/**',
       'poc/**', // throwaway spike; intentionally unlinted
       '**/*.config.{js,ts,mjs}',
