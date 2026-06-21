@@ -5,6 +5,7 @@ import type { Express } from 'express';
 import cors from 'cors';
 import { logger } from './logger.js';
 import { healthRouter } from './api/health.js';
+import { agentRouter } from './api/agent.js';
 
 // Local-first: the daemon is loopback-only, but the Electron renderer / Next dev server is a
 // *different* origin (e.g. http://localhost:3000) calling http://127.0.0.1:4319 — cross-origin.
@@ -27,5 +28,6 @@ export function createServer(): Express {
     next();
   });
   app.use('/api', healthRouter);
+  app.use('/api', agentRouter);
   return app;
 }

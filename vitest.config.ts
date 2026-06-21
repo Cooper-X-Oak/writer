@@ -1,6 +1,17 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
+const root = fileURLToPath(new URL('.', import.meta.url));
+
 export default defineConfig({
+  // Resolve workspace packages to their TS source so tests can import their *values* without a
+  // prior build step (type-only imports never needed this; runtime values like claudeCode do).
+  resolve: {
+    alias: {
+      '@app/agent-defs': `${root}packages/agent-defs/src/index.ts`,
+      '@app/contracts': `${root}packages/contracts/src/index.ts`,
+    },
+  },
   test: {
     include: ['apps/**/src/**/*.test.ts', 'packages/**/src/**/*.test.ts'],
     environment: 'node',

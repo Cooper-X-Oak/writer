@@ -7,3 +7,4 @@ export const CONTRACTS_PACKAGE = '@app/contracts';
 
 export type { Health } from './api/health.js';
 export type { Project } from './api/project.js';
+export type { AgentDetectState, AgentFix, AgentDiagnosis } from './api/agent.js';
