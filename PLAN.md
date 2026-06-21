@@ -6,6 +6,15 @@
 
 Status: planning. Workspace is empty (greenfield). Replace the working title before Phase 0.
 
+### Appendix docs (deep design)
+
+| Doc | Covers |
+|---|---|
+| [`docs/issues-phase-0-1.md`](docs/issues-phase-0-1.md) | Phase 0 & 1 broken into issue-ready tasks with acceptance criteria (P0-1…P0-6, P1-1…P1-10). |
+| [`docs/agent-layer.md`](docs/agent-layer.md) | `RuntimeAgentDef` interface fields, `claude-code` def pseudocode, the piped runner, detection state machine, **PoC-0**. |
+| [`docs/collect-scoring.md`](docs/collect-scoring.md) | Hotspot scoring (rules prefilter → model), provenance cross-verification, budget caps. |
+| [`docs/windows-compat.md`](docs/windows-compat.md) | ENAMETOOLONG, cmdline-length, ConPTY (deferred), chokidar atomic writes, fal.ai key storage. |
+
 ---
 
 ## 1. Product summary
@@ -63,7 +72,7 @@ hotspot-writer/
 │   │       │   ├── registry.ts        # RuntimeAgentDef registry + detect
 │   │       │   ├── defs/              # claude-code.ts (+ codex/cursor/opencode stubs)
 │   │       │   ├── stream/            # claude-jsonl.ts / acp-jsonrpc.ts / text-delta.ts
-│   │       │   ├── runner.ts          # node-pty spawn + stdin inject + stream fwd
+│   │       │   ├── runner.ts          # piped child_process + stdin inject + stream fwd
 │   │       │   └── prompt/            # inject.ts (3-axis assembly) + budget.ts
 │   │       ├── collect/               # COLLECTION LAYER (NEW, core differentiator)
 │   │       │   ├── orchestrator.ts    # patrol → score → source → write workspace
@@ -98,7 +107,7 @@ hotspot-writer/
 
 | Module | Responsibility | Source |
 |---|---|---|
-| `agent/` (daemon) | detect CLI → assemble prompt → spawn pty → parse stream → SSE. **Foundation** | borrowed (RuntimeAgentDef) |
+| `agent/` (daemon) | detect CLI → assemble prompt → spawn piped child process → parse stream → SSE. **Foundation** ([`docs/agent-layer.md`](docs/agent-layer.md)) | borrowed (RuntimeAgentDef) |
 | `collect/` (daemon) | patrol sources → score → source/capture → write workspace. **Core differentiator** | NEW |
 | `workspace/` | project dir = workspace, file = artifact, sidecar manifest (kind/renderer/exports/entry) | borrowed |
 | `store/` | persist project/source/provenance/run metadata | borrowed |
@@ -148,7 +157,7 @@ hotspot-writer/
 - **Project** (= workspace dir) — `{ id, dir, title, hotspotId, artifacts[], createdAt }`
 - **Artifact** (= file + sidecar manifest) — `{ id, path, kind: article|image|export, renderer: doc-flow-html|image, entry, exports:{html?,pdf?,pptx?} }`
 - **AgentRun** (observability backstop) — `{ id, projectId, cliId, kind: write|edit|collect, promptDigest, stepsUsed, stepBudget, status: running|done|lost|aborted, events[] }`
-- **RuntimeAgentDef** (agent-defs) — `{ id, displayName, detect(), buildArgs(ctx), streamFormat: claude-jsonl|acp-jsonrpc|text-delta, promptViaStdin, capabilityFlags }`
+- **RuntimeAgentDef** (agent-defs) — `{ id, name, bin, fallbackBins, versionArgs, authProbe, buildArgs(ctx), streamFormat: claude-stream-json|acp-json-rpc|text-delta, promptViaStdin, promptInputFormat, maxPromptArgBytes, fallbackModels, externalMcpInjection, capabilityFlags }`. Full field list + `claude-code` def pseudocode: [`docs/agent-layer.md`](docs/agent-layer.md).
 
 ---
 
@@ -156,10 +165,11 @@ hotspot-writer/
 
 | Risk | Level | Decision / mitigation | Phase |
 |---|---|---|---|
+| **Delegate-CLI stream contract unverified** (stdin `stream-json` envelope; keeping stdin open across `tool_use`; cross-version parsing) | CRITICAL | **Highest-risk unknown — PoC first.** 1–2 day spike against the real CLI before building the runner/parser. See [`docs/agent-layer.md`](docs/agent-layer.md) (PoC-0). | PoC-0 / 1 |
 | User has no Claude Code → core unusable | CRITICAL | First-run `registry.detect()` → guided page with precise diagnosis (not installed / not on PATH / too old / not logged in) + install link + verify button. Any one CLI available unblocks. | 1 |
 | X/Twitter ToS / account ban | CRITICAL | RSS + HN (public feeds) as MVP primary, no ToS risk. X list marked "experimental, use at own risk". Playwright persistent user-data-dir, in-app manual login once (no password storage, no fake login). Low-freq patrol (≥15 min) with jitter. | 7 |
-| BYOK key leak | CRITICAL | fal.ai key in OS keychain (keytar), never in SQLite plaintext or logs. | 5 |
-| Windows pty / path / file-lock | HIGH | Short-hash dir names (avoid ENAMETOOLONG), long-path enable, case-insensitive PATH match via `where`, ConPTY backend verify, chokidar `awaitWriteFinish` + atomic write-then-rename. | 1, 2 |
+| BYOK key leak | CRITICAL | fal.ai key encrypted via Electron `safeStorage` (DPAPI/Keychain-backed), decrypted in main process at call time, never in SQLite plaintext or logs. See [`docs/windows-compat.md`](docs/windows-compat.md#45-falai-key-storage-byok). | 5 |
+| Windows path / cmdline / file-lock | HIGH | Short-hash workspace dirs (avoid ENAMETOOLONG; do **not** rely on LongPathsEnabled), prompt/context via stdin+files **never argv** (cmdline-length limit), `where`-based PATH match, chokidar `awaitWriteFinish` + atomic write-then-rename with EPERM/EBUSY retry. Agent runs use **piped child processes** (no PTY); ConPTY is deferred to an optional terminal only. Full handling: [`docs/windows-compat.md`](docs/windows-compat.md). | 1, 2 |
 | Agent gets lost / cost blowup | HIGH | `prompt/budget.ts` step/token hard caps; CDP DOM read is primary (model only at scoring + cross-verify); lost-detection (over budget / N steps no file write / repeated tool call) → UI abort/restart; AgentRun.events append-only timeline. | 3 |
 | Stream-parser edge bugs | HIGH | JSONL chunk/half-line/malformed handling; unit coverage ≥90%. | 1 |
 | MCP local-tool exposure | MEDIUM | Expose read-provenance/write-artifact/list-templates via MCP SDK instead of raw shell. | 3 |
@@ -169,12 +179,16 @@ hotspot-writer/
 
 ## 4. Phases
 
-- **Phase 0 — Scaffold.** pnpm workspace + tsconfig + ESM; `contracts` initial DTO; daemon `/api/health`; web calls health; Electron spawns daemon + loads web. *Verify:* `pnpm dev` → Electron window shows web showing daemon health ok.
-- **Phase 1 — Agent layer (top-priority foundation).** RuntimeAgentDef type; `defs/claude-code.ts`; `registry.ts` detect + first-run guide; `runner.ts` pty + stdin; `stream/claude-jsonl.ts`; `/api/agent` SSE; `agent-stream` UI. *Verify:* web prompt → delegate local Claude Code → live stream. Windows pty verified.
+> **Phases 0 & 1 are broken into issue-ready tasks with acceptance criteria in
+> [`docs/issues-phase-0-1.md`](docs/issues-phase-0-1.md).** Run **PoC-0** (delegate-CLI stream
+> contract, [`docs/agent-layer.md`](docs/agent-layer.md)) before Phase 1's runner/parser.
+
+- **Phase 0 — Scaffold.** pnpm workspace + tsconfig + ESM; `contracts` initial DTO; daemon `/api/health`; web calls health; Electron spawns daemon + loads web. *Verify:* `pnpm dev` → Electron window shows web showing daemon health ok. → tasks **P0-1…P0-6**.
+- **Phase 1 — Agent layer (top-priority foundation).** RuntimeAgentDef type; `defs/claude-code.ts`; `registry.ts` detect + first-run guide; `runner.ts` **piped child_process** + stdin; `stream/claude-jsonl.ts`; `/api/agent` SSE; `agent-stream` UI. *Verify:* web prompt → delegate local Claude Code → live stream; piped headless run smoke-tested on Windows (no TTY). → tasks **P1-1…P1-10**.
 - **Phase 2 — Artifact model + workspace (foundation).** `store/` sqlite + migrations + repos; `manifest.ts` + `artifacts.ts`; `watcher.ts` (awaitWriteFinish + atomic write); `/api/projects` CRUD. *Verify:* create project → workspace dir + manifest; file change observed by web.
 - **Phase 3 — Writing chain (3-axis prompt).** `skills/writing/SKILL.md` + `craft/anti-ai-slop.md` + `STYLE.md.template`; `prompt/inject.ts` + `budget.ts`; `mcp/server.ts` exposes write-artifact; agent writes `article.html`. *Verify:* topic → inject writing skill → article.html draft, anti-AI-tone rules in effect.
 - **Phase 4 — Preview + re-edit bridge.** `preview-frame` sandboxed dual-iframe + srcDoc host bridge + CSS swap; `edit-bridge` data-od-id + postMessage (MVP: pick-element style + selection comment-to-chat); patch back to article.html. *Verify:* preview renders; element style edit persists; selection comment becomes chat attachment triggering rewrite.
-- **Phase 5 — Illustration.** `media/image/fal.ts` Flux + keytar; agent requests image → generate → write `assets/` → reference in HTML; `/api/media`. *Verify:* agent triggers image → fal.ai → image into doc-flow preview.
+- **Phase 5 — Illustration.** `media/image/fal.ts` Flux + `safeStorage` key handling; agent requests image → generate → write `assets/` → reference in HTML; `/api/media`. *Verify:* agent triggers image → fal.ai → image into doc-flow preview.
 - **Phase 6 — Export.** `export/html-inline.ts`; `export/pdf.ts` via Electron printToPDF IPC. *Verify:* one-click export self-contained HTML + PDF.
 - **Phase 7 — Collection layer (core differentiator, partly parallel with 3–6).** `cdp/browser.ts` persistent ctx + login guide; `scrape.ts`; `sources/rss.ts` (MVP primary) + `x-list.ts` (experimental); `scoring.ts` prefilter + on-demand model + budget cap; `provenance.ts` immutable nodes; `orchestrator.ts`; `routines.ts` (MVP manual trigger); `/api/collect` + web `/collect` UI. *Verify:* config RSS → collect → score → hotspot.json with provenance → UI lists hotspots → select creates project (feeds Phase 3).
 - **Phase 8 — Full chain + MVP acceptance.** Wire Phases 1–7; multi-CLI def stubs (detect + placeholder); Windows compat regression. *Verify:* end-to-end minimum value chain.
