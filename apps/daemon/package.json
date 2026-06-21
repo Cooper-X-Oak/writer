@@ -3,10 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "echo '[daemon] Express /api/health server lands in P0-3'",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@app/contracts": "workspace:*",
+    "express": "^5.1.0",
+    "pino": "^9.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0"
   }
 }
