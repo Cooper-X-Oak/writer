@@ -12,8 +12,8 @@
 
 export type ClaudeStreamEvent =
   | { kind: 'status'; subtype?: string; sessionId?: string; rateLimit?: unknown; raw: unknown }
-  | { kind: 'text_delta'; text: string }
-  | { kind: 'thinking_delta'; text: string }
+  | { kind: 'text_delta'; text: string; source: 'stream' | 'message' }
+  | { kind: 'thinking_delta'; text: string; source: 'stream' | 'message' }
   | { kind: 'tool_use'; id?: string; name?: string; input?: unknown }
   | { kind: 'tool_input_delta'; partial: string }
   | { kind: 'tool_result'; toolUseId?: string; content?: unknown }
@@ -94,8 +94,8 @@ export function createClaudeStreamParser(onEvent: (event: ClaudeStreamEvent) => 
       case 'assistant': {
         note('assistant');
         for (const block of obj.message?.content ?? []) {
-          if (block.type === 'text') onEvent({ kind: 'text_delta', text: block.text ?? '' });
-          else if (block.type === 'thinking') onEvent({ kind: 'thinking_delta', text: block.thinking ?? '' });
+          if (block.type === 'text') onEvent({ kind: 'text_delta', text: block.text ?? '', source: 'message' });
+          else if (block.type === 'thinking') onEvent({ kind: 'thinking_delta', text: block.thinking ?? '', source: 'message' });
           else if (block.type === 'tool_use')
             onEvent({ kind: 'tool_use', id: block.id, name: block.name, input: block.input });
           else note(`assistant/content/${block.type ?? '?'}`);
@@ -122,8 +122,8 @@ export function createClaudeStreamParser(onEvent: (event: ClaudeStreamEvent) => 
           onEvent({ kind: 'tool_use', id: ev.content_block.id, name: ev.content_block.name, input: ev.content_block.input ?? {} });
         } else if (ev.type === 'content_block_delta') {
           const d = ev.delta ?? {};
-          if (d.type === 'text_delta') onEvent({ kind: 'text_delta', text: d.text ?? '' });
-          else if (d.type === 'thinking_delta') onEvent({ kind: 'thinking_delta', text: d.thinking ?? '' });
+          if (d.type === 'text_delta') onEvent({ kind: 'text_delta', text: d.text ?? '', source: 'stream' });
+          else if (d.type === 'thinking_delta') onEvent({ kind: 'thinking_delta', text: d.thinking ?? '', source: 'stream' });
           else if (d.type === 'input_json_delta') onEvent({ kind: 'tool_input_delta', partial: d.partial_json ?? '' });
           else note(`stream_event/content_block_delta/${d.type ?? '?'}`);
         } else if (ev.type === 'message_delta' && ev.delta?.stop_reason) {
