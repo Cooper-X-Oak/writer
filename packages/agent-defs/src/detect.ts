@@ -3,7 +3,9 @@
 // this is unit-tested without spawning a real CLI (the daemon wires real implementations in P1-4).
 
 import { execFile } from 'node:child_process';
+import type { ExecFileException } from 'node:child_process';
 import type { RuntimeAgentDef } from './types.js';
+import { buildWinCmdInvocation } from './win-spawn.js';
 
 export type DetectState = 'NOT_INSTALLED' | 'VERSION_PROBE_FAILED' | 'TOO_OLD' | 'NOT_LOGGED_IN' | 'READY';
 
@@ -41,13 +43,21 @@ function gte(a: [number, number, number], b: [number, number, number]): boolean 
 }
 
 // Windows coding-agent CLIs are `.cmd`/`.bat` shims; Node 22+ can't execFile them without a shell
-// (EINVAL, CVE-2024-27980), so probe through a shell on win32.
+// (EINVAL, CVE-2024-27980). Drive cmd.exe explicitly via buildWinCmdInvocation rather than
+// shell:true — shell:true joins [cmd, ...args] with no per-arg quoting, so a spaced bin path
+// (C:\Program Files\nodejs\claude.cmd) splits on the first space and probes fail spuriously.
 const defaultRun: RunFn = (cmd, args, timeoutMs) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs, shell: process.platform === 'win32' }, (err, stdout, stderr) => {
+    const done = (err: ExecFileException | null, stdout: string, stderr: string): void => {
       const code = typeof err?.code === 'number' ? err.code : err ? 1 : 0;
-      resolve({ code, stdout: stdout ?? '', stderr: stderr ?? '' });
-    });
+      resolve({ code, stdout: stdout || '', stderr: stderr || '' });
+    };
+    if (process.platform === 'win32') {
+      const inv = buildWinCmdInvocation(cmd, args);
+      execFile(inv.file, inv.args, { timeout: timeoutMs, windowsVerbatimArguments: true }, done);
+    } else {
+      execFile(cmd, args, { timeout: timeoutMs }, done);
+    }
   });
 
 const WIN_EXECUTABLE = /\.(cmd|exe|bat|com)$/i;

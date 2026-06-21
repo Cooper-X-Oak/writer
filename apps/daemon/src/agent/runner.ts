@@ -4,6 +4,7 @@
 
 import { spawn as nodeSpawn, execFile } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { buildWinCmdInvocation } from '@app/agent-defs';
 import type { RuntimeAgentDef, RuntimeBuildContext } from '@app/agent-defs';
 import { createClaudeStreamParser, type ClaudeStreamEvent } from './stream/claude-jsonl.js';
 import { userMessageEnvelope } from './envelope.js';
@@ -45,15 +46,6 @@ export interface AgentRunHandle {
   abort(signal?: NodeJS.Signals): void;
 }
 
-// Quote one token for a cmd.exe command line. cmd treats & | < > ( ) ^ as metacharacters OUTSIDE
-// double quotes, and splits on spaces; wrapping any such token in quotes (doubling embedded quotes)
-// neutralizes them. We pass windowsVerbatimArguments so Node does not re-quote.
-function quoteWinArg(s: string): string {
-  if (s === '') return '""';
-  if (!/[\s"&|<>()^%!]/.test(s)) return s;
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
 export function startAgentRun(opts: AgentRunOptions): AgentRunHandle {
   const spawnImpl = opts.spawnImpl ?? nodeSpawn;
   const bin = opts.bin ?? opts.def.bin;
@@ -71,21 +63,25 @@ export function startAgentRun(opts: AgentRunOptions): AgentRunHandle {
 
   // On Windows, do NOT rely on shell:true to pass argv — Node concatenates args into one string for
   // cmd.exe with no per-arg quoting, so spaces split tokens and & | < > ( ) inject (CVE-2024-27980
-  // class). Build and quote the command line ourselves, then spawn cmd.exe verbatim.
-  const child: ChildProcess =
-    useShell && isWin
-      ? spawnImpl(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', [bin, ...args].map(quoteWinArg).join(' ')], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          cwd: opts.cwd,
-          env: opts.env ?? process.env,
-          windowsVerbatimArguments: true,
-        })
-      : spawnImpl(bin, args, {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          cwd: opts.cwd,
-          env: opts.env ?? process.env,
-          shell: useShell,
-        });
+  // class). buildWinCmdInvocation quotes each token AND adds the outer wrap that `cmd /S` strips, so
+  // a spaced bin path (C:\Program Files\nodejs\claude.cmd) survives. Spawn cmd.exe verbatim.
+  let child: ChildProcess;
+  if (useShell && isWin) {
+    const inv = buildWinCmdInvocation(bin, args);
+    child = spawnImpl(inv.file, inv.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      windowsVerbatimArguments: true,
+    });
+  } else {
+    child = spawnImpl(bin, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      shell: useShell,
+    });
+  }
 
   let aborted = false;
   let exited = false;
@@ -105,6 +101,7 @@ export function startAgentRun(opts: AgentRunOptions): AgentRunHandle {
   const killTree = (signal?: NodeJS.Signals): void => {
     if (killed) return;
     killed = true;
+    clearIdle(); // canonical kill path: cancel the watchdog so it can't fire a misleading timeout line
     if (useShell && isWin && typeof child.pid === 'number') {
       execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], (err) => {
         if (err) child.kill('SIGKILL');
@@ -149,6 +146,13 @@ export function startAgentRun(opts: AgentRunOptions): AgentRunHandle {
   child.stderr?.setEncoding('utf8');
   child.stderr?.on('data', (chunk: string) => opts.onStderr?.(chunk));
 
+  // Stream-level 'error' (EPIPE / ERR_STREAM_DESTROYED when a write or read races a dying child) is
+  // emitted on the stdio streams themselves — NOT on the ChildProcess 'error' channel below. Without
+  // these listeners an unhandled 'error' would crash the whole daemon. Surface them as stderr.
+  child.stdin?.on('error', (err: Error) => opts.onStderr?.(`stdin error: ${err.message}\n`));
+  child.stdout?.on('error', (err: Error) => opts.onStderr?.(`stdout error: ${err.message}\n`));
+  child.stderr?.on('error', (err: Error) => opts.onStderr?.(`stderr error: ${err.message}\n`));
+
   // Spawn failure (bin missing, EINVAL, …) emits 'error'; without a listener Node would throw and
   // crash the daemon. Surface it as a terminal exit instead.
   child.on('error', (err: Error) => {
@@ -162,11 +166,14 @@ export function startAgentRun(opts: AgentRunOptions): AgentRunHandle {
   });
 
   const writeMessage = (text: string): void => {
-    if (child.stdin?.writable) child.stdin.write(userMessageEnvelope(text));
+    if (child.stdin?.writable) {
+      child.stdin.write(userMessageEnvelope(text));
+      armIdle(); // any caller-initiated input is fresh activity — reset the inactivity window so a
+      // long human pause between mid-session turns can't reap a healthy CLI
+    }
   };
 
   writeMessage(opts.prompt);
-  armIdle();
 
   return {
     get pid() {

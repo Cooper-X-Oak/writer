@@ -11,14 +11,19 @@ function fakeChild() {
     pid: number;
     stdout: EventEmitter & { setEncoding: () => void };
     stderr: EventEmitter & { setEncoding: () => void };
-    stdin: { writable: boolean; write: () => void; end: () => void };
+    stdin: EventEmitter & { writable: boolean; write: () => void; end: () => void };
     kill: (signal?: string) => boolean;
   };
   child.pid = 4242;
   const mkStream = () => Object.assign(new EventEmitter(), { setEncoding: () => undefined });
   child.stdout = mkStream();
   child.stderr = mkStream();
-  child.stdin = { writable: true, write: () => undefined, end: () => undefined };
+  // stdin is an EventEmitter so the runner can attach its 'error' listener (EPIPE race guard).
+  child.stdin = Object.assign(new EventEmitter(), {
+    writable: true,
+    write: () => undefined,
+    end: () => undefined,
+  });
   child.kill = () => {
     child.emit('close', null, 'SIGTERM');
     return true;
