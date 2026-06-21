@@ -1,0 +1,12 @@
+{
+  "name": "@app/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "echo '[daemon] Express /api/health server lands in P0-3'",
+    "clean": "rm -rf dist"
+  }
+}
