@@ -12,26 +12,31 @@ Related: [`../PLAN.md`](../PLAN.md) §2.2 / §3 · issues in
 
 ---
 
-## PoC-0 (do this first)
+## PoC-0 (done ✅ — see [`poc/cli-stream/`](../poc/cli-stream/README.md))
 
-Before building P1-5 (runner) and P1-6 (parser), run a 1–2 day throwaway spike against the
-**real** Claude Code CLI:
+A throwaway spike drove the **real** Claude Code CLI (2.1.185) over piped stdio:
 
 ```bash
 claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages
 ```
 
-Inject an initial prompt **and** a mid-turn follow-up over stdin, logging every output line.
+**Success criteria — all confirmed:**
+1. ✅ Stdin **user-message envelope** is newline-delimited
+   `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"…"}]}}` — accepted; one turn per message.
+2. ✅ Stdin can stay **open across turns**; a second user message produces a second turn with a
+   **stable `session_id`** (the basis for re-edit / comment-to-chat).
+3. ✅ The parser maps the full observed taxonomy with **0 `unknown`** events (after adding
+   `rate_limit_event`); it tolerates mid-line chunk splits and malformed lines.
 
-**Success criteria:**
-1. Confirm the stdin **user-message envelope** shape (the `--input-format stream-json` envelope
-   is under-documented — treat as unverified until this PoC confirms it).
-2. Confirm stdin can stay **open across a `tool_use` turn** so a follow-up user message can be
-   injected mid-session.
-3. The parser handles every output line type actually observed.
-
-This collapses the single highest-risk unknown in the plan (see
-[`../PLAN.md`](../PLAN.md) §3 risk table and §5 of the plan) before the real layer is built.
+**Findings to fold into P1-2/P1-5/P1-6** (detail in the PoC README):
+- `bypassPermissions` is **rejected under root** (maps to `--dangerously-skip-permissions`); the
+  `claude-code` def must not hardcode it — run non-root or use `--permission-mode default` + an
+  explicit `--allowedTools` allow-list.
+- `--include-partial-messages` **duplicates** assistant text (streamed deltas **and** the final
+  `assistant` block); P1-6 must pick one source of truth.
+- Real taxonomy is wider than the docs (`system` subtypes `post_turn_summary|status|thinking_tokens`,
+  `stream_event` `message_start|stop` / `content_block_start|stop` / `signature_delta`, and an
+  out-of-band top-level **`rate_limit_event`** → surface into the BudgetLedger). Default-tolerate unknowns.
 
 ---
 
