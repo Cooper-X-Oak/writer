@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { detectAgent, parseSemver, defaultResolveBin, type RunFn } from './detect.js';
+import { detectAgent, parseSemver, defaultResolveBin, pickResolvedPath, type RunFn } from './detect.js';
 import { claudeCode } from './defs/claude-code.js';
+
+describe('pickResolvedPath', () => {
+  it('prefers a Windows-executable extension over the bare sh shim', () => {
+    // exactly what `where claude` returns on the real machine (measured)
+    const lines = ['C:\\nvm4w\\nodejs\\claude', 'C:\\nvm4w\\nodejs\\claude.cmd'];
+    expect(pickResolvedPath(lines, true)).toBe('C:\\nvm4w\\nodejs\\claude.cmd');
+  });
+
+  it('falls back to the first line when no win-executable extension is present', () => {
+    expect(pickResolvedPath(['C:\\x\\claude'], true)).toBe('C:\\x\\claude');
+  });
+
+  it('returns the first non-empty line on POSIX, trimming blanks', () => {
+    expect(pickResolvedPath(['', '  /usr/local/bin/claude  ', ''], false)).toBe('/usr/local/bin/claude');
+  });
+
+  it('returns undefined when there is nothing to pick', () => {
+    expect(pickResolvedPath([''], true)).toBeUndefined();
+  });
+});
 
 interface Canned {
   code?: number;

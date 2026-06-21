@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
+import { EventEmitter } from 'node:events';
+import type { spawn as nodeSpawn } from 'node:child_process';
 import { startAgentRun, type AgentExitInfo } from './runner.js';
 import type { ClaudeStreamEvent } from './stream/claude-jsonl.js';
 import type { RuntimeAgentDef } from '@app/agent-defs';
@@ -36,6 +38,7 @@ describe('startAgentRun (pipes + fake CLI)', () => {
     await new Promise<void>((done) => {
       const h = startAgentRun({
         def: fakeDef(),
+        shell: false, // fixture is node.exe (a real exe); skip the win32 shell wrapper here
         ctx: { partialMessages: true },
         prompt: 'hello',
         onEvent: (e) => events.push(e),
@@ -63,6 +66,7 @@ describe('startAgentRun (pipes + fake CLI)', () => {
     await new Promise<void>((done) => {
       const h = startAgentRun({
         def: fakeDef(),
+        shell: false, // fixture is node.exe (a real exe); skip the win32 shell wrapper here
         ctx: { partialMessages: true },
         prompt: 'one',
         onEvent: (e) => {
@@ -85,6 +89,7 @@ describe('startAgentRun (pipes + fake CLI)', () => {
     await new Promise<void>((done) => {
       const h = startAgentRun({
         def: fakeDef(),
+        shell: false, // fixture is node.exe (a real exe); skip the win32 shell wrapper here
         ctx: {}, // partialMessages omitted → no dedup
         prompt: 'x',
         onEvent: (e) => events.push(e),
@@ -95,11 +100,74 @@ describe('startAgentRun (pipes + fake CLI)', () => {
     expect(textOf(events)).toBe('echo:xecho:x'); // stream + message, both kept
   });
 
+  // A fake child for the failure/timeout paths, which the real fixture can't trigger on demand.
+  function fakeChild() {
+    const child = new EventEmitter() as EventEmitter & {
+      pid: number;
+      stdout: EventEmitter & { setEncoding: () => void };
+      stderr: EventEmitter & { setEncoding: () => void };
+      stdin: { writable: boolean; write: () => void; end: () => void };
+      kill: () => boolean;
+    };
+    child.pid = 4242;
+    const mk = () => Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+    child.stdout = mk();
+    child.stderr = mk();
+    child.stdin = { writable: true, write: () => undefined, end: () => undefined };
+    child.kill = () => {
+      child.emit('close', null, 'SIGTERM');
+      return true;
+    };
+    return child;
+  }
+
+  it('surfaces a spawn error as a terminal exit instead of crashing', () => {
+    const child = fakeChild();
+    const spawnImpl = (() => child) as unknown as typeof nodeSpawn;
+    let stderr = '';
+    let exit: AgentExitInfo | undefined;
+    startAgentRun({
+      def: fakeDef(),
+      shell: false,
+      ctx: {},
+      prompt: 'x',
+      spawnImpl,
+      onEvent: () => {},
+      onStderr: (c) => (stderr += c),
+      onExit: (info) => (exit = info),
+    });
+    child.emit('error', new Error('spawn ENOENT'));
+    expect(stderr).toContain('spawn error:');
+    expect(exit).toEqual({ code: null, signal: null, aborted: false });
+  });
+
+  it('reaps a silent child via the inactivity timeout', async () => {
+    const child = fakeChild();
+    const spawnImpl = (() => child) as unknown as typeof nodeSpawn;
+    let stderr = '';
+    const exit = await new Promise<AgentExitInfo | undefined>((done) => {
+      startAgentRun({
+        def: fakeDef(),
+        shell: false,
+        inactivityMs: 40,
+        ctx: {},
+        prompt: 'x',
+        spawnImpl,
+        onEvent: () => {},
+        onStderr: (c) => (stderr += c),
+        onExit: (info) => done(info),
+      });
+    });
+    expect(stderr).toContain('inactivity timeout');
+    expect(exit?.aborted).toBe(false);
+  });
+
   it('abort() kills the child and reports aborted', async () => {
     let exit: AgentExitInfo | undefined;
     await new Promise<void>((done) => {
       const h = startAgentRun({
         def: fakeDef(),
+        shell: false, // fixture is node.exe (a real exe); skip the win32 shell wrapper here
         ctx: {},
         prompt: 'hang',
         onEvent: () => {},

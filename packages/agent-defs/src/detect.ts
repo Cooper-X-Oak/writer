@@ -40,24 +40,36 @@ function gte(a: [number, number, number], b: [number, number, number]): boolean 
   return a2 >= b2;
 }
 
+// Windows coding-agent CLIs are `.cmd`/`.bat` shims; Node 22+ can't execFile them without a shell
+// (EINVAL, CVE-2024-27980), so probe through a shell on win32.
 const defaultRun: RunFn = (cmd, args, timeoutMs) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    execFile(cmd, args, { timeout: timeoutMs, shell: process.platform === 'win32' }, (err, stdout, stderr) => {
       const code = typeof err?.code === 'number' ? err.code : err ? 1 : 0;
       resolve({ code, stdout: stdout ?? '', stderr: stderr ?? '' });
     });
   });
 
-/** Resolve a bin (or its fallbacks) to an absolute path using `where` (Windows) / `which` (POSIX).
- *  `where` may print several lines — the first hit wins. Returns undefined if none resolve. */
+const WIN_EXECUTABLE = /\.(cmd|exe|bat|com)$/i;
+
+/** From a finder's (possibly multi-line) output, pick the path to spawn. On Windows `where` prints
+ *  every match — the bare `sh` shim AND the `.cmd`; prefer a Windows-executable extension since the
+ *  extensionless shim can't be spawned. Pure + exported so the selection rule is unit-testable. */
+export function pickResolvedPath(lines: string[], isWin: boolean): string | undefined {
+  const cleaned = lines.map((s) => s.trim()).filter(Boolean);
+  if (isWin) return cleaned.find((l) => WIN_EXECUTABLE.test(l)) ?? cleaned[0];
+  return cleaned[0];
+}
+
+/** Resolve a bin (or its fallbacks) to an absolute path using `where` (Windows) / `which` (POSIX). */
 export async function defaultResolveBin(bin: string, fallbacks: string[] = []): Promise<string | undefined> {
-  const finder = process.platform === 'win32' ? 'where' : 'which';
+  const isWin = process.platform === 'win32';
+  const finder = isWin ? 'where' : 'which';
   for (const candidate of [bin, ...fallbacks]) {
     const hit = await new Promise<string | undefined>((resolve) => {
       execFile(finder, [candidate], { timeout: 5000 }, (err, stdout) => {
         if (err) return resolve(undefined);
-        const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
-        resolve(first ?? undefined);
+        resolve(pickResolvedPath(stdout.split(/\r?\n/), isWin));
       });
     });
     if (hit) return hit;
