@@ -1,6 +1,8 @@
 // Project — a workspace directory. Stub for P0-2; fleshed out alongside the store/workspace
 // layers (P2). Internal API surface → plain TS interface.
 
+import type { WriteSource } from './write.js';
+
 export interface Project {
   id: string;
   /** Absolute path to the workspace directory (short-hashed on Windows — see docs/windows-compat.md). */
@@ -8,4 +10,6 @@ export interface Project {
   title: string;
   /** ISO-8601 timestamp. */
   createdAt: string;
+  /** Where this draft originated, when seeded from a collected hotspot. Absent for typed topics. */
+  source?: WriteSource;
 }

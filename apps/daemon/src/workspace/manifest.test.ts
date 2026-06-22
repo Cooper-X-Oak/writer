@@ -79,4 +79,10 @@ describe('manifest provenance (source)', () => {
     expect(m).toBeDefined();
     expect(m?.source).toBeUndefined();
   });
+
+  it('manifestToProject forwards a present source onto the Project DTO, omits it when absent', () => {
+    const m = buildManifest({ id: 'i', title: 't', topic: 't', createdAt: 'now', source });
+    expect(manifestToProject(m, '/p/i').source).toEqual(source);
+    expect('source' in manifestToProject(SAMPLE, '/p/x')).toBe(false);
+  });
 });
