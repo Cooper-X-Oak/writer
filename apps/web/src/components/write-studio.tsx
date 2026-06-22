@@ -1,8 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Project, Hotspot, WriteSource } from '@app/contracts';
+import type { Project, Hotspot, MaterialCard } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
+import {
+  createCorpusProject,
+  listMaterials,
+  addLinkCard,
+  addTextCard,
+  addCodeCard,
+  addImageCard,
+  addHotspotCard,
+  removeCard,
+} from '../lib/api/corpus';
+import { CorpusSidebar } from './corpus-sidebar';
 import {
   listProjects,
   getArtifact,
@@ -60,7 +71,10 @@ export function WriteStudio() {
   const [refreshing, setRefreshing] = useState(false);
   const [feeds, setFeeds] = useState<string[]>([]);
   const [feedsBusy, setFeedsBusy] = useState(false);
+  const [cards, setCards] = useState<MaterialCard[]>([]);
+  const [corpusBusy, setCorpusBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const corpusCreatingRef = useRef<Promise<string | undefined> | null>(null);
 
   const running = phase === 'running';
 
@@ -135,14 +149,11 @@ export function WriteStudio() {
     }
   };
 
-  // Override lets a hotspot click pass its title + provenance explicitly, avoiding the setState
-  // batching race (start() reading stale `topic` right after setTopic).
-  const start = async (override?: { topic: string; source?: WriteSource }): Promise<void> => {
-    const t = (override?.topic ?? topic).trim();
-    if (!t || running) return;
-    if (override) setTopic(t); // reflect the chosen hotspot in the input
-    setSelected(null);
-    setSelectedHtml(null);
+  // Write INTO the open corpus project: stream a draft, then commit it (corpus → draft) and reopen
+  // the now-drafted project (→ article view). Materials-first: gather, then write.
+  const writeIntoCorpus = async (): Promise<void> => {
+    const t = topic.trim();
+    if (!selected || !t || running) return;
     setDraft('');
     setStatus('');
     setPhase('running');
@@ -158,9 +169,8 @@ export function WriteStudio() {
             else if (ev.type === 'done') {
               setPhase('done');
               setStatus(ev.costUsd != null ? `完成 · 已保存 · $${ev.costUsd.toFixed(4)}` : '完成 · 已保存');
-              // Land in the rich project view (preview / edit / 配图 / 导出) instead of leaving the
-              // user on the plain-text draft — the chain flows straight into editing.
-              if (ev.projectId) void openProjectById(ev.projectId);
+              setTopic('');
+              if (ev.projectId) void openProjectById(ev.projectId); // reopens as a draft → article view
               else void refreshProjects();
             } else if (ev.type === 'error') {
               setPhase('error');
@@ -169,7 +179,8 @@ export function WriteStudio() {
           },
         },
         controller.signal,
-        override?.source,
+        undefined,
+        selected.id, // commit INTO this corpus project (corpus → draft)
       );
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
@@ -179,11 +190,65 @@ export function WriteStudio() {
     }
   };
 
-  const onPickHotspot = (h: Hotspot): void =>
-    void start({
-      topic: h.title,
-      source: { hotspotId: h.id, sourceType: h.sourceType, url: h.url, collectedAt: h.fetchedAt },
+  // New piece — it starts as a corpus (gather material first), then open it.
+  const createNewCorpus = async (): Promise<void> => {
+    try {
+      const project = await createCorpusProject();
+      setProjects(await listProjects());
+      await openProject(project);
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Ensure there is an open project to ingest into; create a corpus on the fly if none. A ref
+  // de-dupes concurrent first-drops (stale `selected` would otherwise create two corpus projects).
+  const ensureCorpus = async (): Promise<string | undefined> => {
+    if (selected) return selected.id;
+    if (corpusCreatingRef.current) return corpusCreatingRef.current;
+    const pending = (async (): Promise<string | undefined> => {
+      try {
+        const project = await createCorpusProject();
+        setProjects(await listProjects());
+        await openProject(project);
+        return project.id;
+      } catch (err: unknown) {
+        setStatus(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+    })().finally(() => {
+      corpusCreatingRef.current = null;
     });
+    corpusCreatingRef.current = pending;
+    return pending;
+  };
+
+  // Material ingest — add to the open project's corpus, then reconcile the card list.
+  const ingest = async (add: (projectId: string) => Promise<unknown>): Promise<void> => {
+    const projectId = await ensureCorpus();
+    if (!projectId) return;
+    setCorpusBusy(true);
+    try {
+      await add(projectId);
+      setCards(await listMaterials(projectId));
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCorpusBusy(false);
+    }
+  };
+
+  const onAddUrl = (url: string): void => void ingest((id) => addLinkCard(id, { url }));
+  const onAddText = (body: string, kind: 'text' | 'md' | 'code'): void =>
+    void ingest((id) => (kind === 'code' ? addCodeCard(id, { snippet: body }) : addTextCard(id, { kind, body })));
+  const onAddImageFile = (file: File): void => void ingest((id) => addImageCard(id, file));
+  const onAddHotspot = (h: Hotspot): void => void ingest((id) => addHotspotCard(id, h.id));
+  const onRemoveCard = (cardId: string): void => {
+    if (!selected) return;
+    const projectId = selected.id;
+    setCards((cs) => cs.filter((c) => c.id !== cardId)); // optimistic
+    void removeCard(projectId, cardId).catch(() => void loadCorpus(projectId));
+  };
 
   const onDismissHotspot = async (h: Hotspot): Promise<void> => {
     setHotspots((list) => list.filter((x) => x.id !== h.id)); // optimistic
@@ -220,10 +285,23 @@ export function WriteStudio() {
     setTitleEditing(false);
   };
 
+  const loadCorpus = async (projectId: string): Promise<void> => {
+    try {
+      setCards(await listMaterials(projectId));
+    } catch {
+      setCards([]); // best-effort
+    }
+  };
+
   const openProject = async (project: Project): Promise<void> => {
     setSelected(project);
     setSelectedHtml(null);
+    setDraft('');
+    setStatus('');
+    setPhase('idle');
     clearEdit();
+    void loadCorpus(project.id);
+    if (project.stage === 'corpus') return; // a corpus project has no article yet
     try {
       setSelectedHtml(await getArtifact(project.id));
     } catch (err: unknown) {
@@ -247,6 +325,7 @@ export function WriteStudio() {
   const newWrite = (): void => {
     setSelected(null);
     setSelectedHtml(null);
+    setCards([]);
     clearEdit();
     setDraft('');
     setStatus('');
@@ -361,12 +440,72 @@ export function WriteStudio() {
         projects={projects}
         selectedId={selected?.id ?? null}
         onSelect={(p) => void openProject(p)}
-        onNew={newWrite}
+        onNew={() => void createNewCorpus()}
         onDelete={(p) => void doDeleteProject(p)}
       />
 
       <div style={styles.main}>
-        {selected ? (
+        {!selected ? (
+          <div style={styles.landing}>
+            <p style={styles.landingText}>点「＋ 新建」开一篇 —— 先攒素材（拖 / 贴，或从右侧热点「选中加入」），再写作。</p>
+            <button style={styles.btn} onClick={() => void createNewCorpus()}>
+              ＋ 新建
+            </button>
+          </div>
+        ) : selected.stage === 'corpus' ? (
+          <div>
+            <header style={styles.viewHeader}>
+              <h2 style={styles.viewTitle}>{selected.title}</h2>
+              <div style={styles.viewActions}>
+                <button
+                  style={{ ...styles.btn, ...styles.ghostBtn, ...styles.dangerBtn }}
+                  onClick={() => void doDeleteProject(selected)}
+                >
+                  删除
+                </button>
+                <button style={styles.btn} onClick={() => void createNewCorpus()}>
+                  ＋ 新建
+                </button>
+              </div>
+            </header>
+            <p style={styles.hint}>
+              攒素材中：右侧拖 / 贴 链接·文本·代码·图片，或从热点「选中加入」。攒够了就基于素材写作（下一步：大纲 W3）。
+            </p>
+            <div style={styles.inputRow}>
+              <input
+                style={styles.input}
+                value={topic}
+                placeholder="给这篇定个主题 / 角度，例如：远程办公正在重塑城市格局"
+                onChange={(e) => setTopic(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void writeIntoCorpus();
+                }}
+                disabled={running}
+              />
+              {running ? (
+                <button style={{ ...styles.btn, ...styles.stopBtn }} onClick={stop}>
+                  停止
+                </button>
+              ) : (
+                <button style={styles.btn} onClick={() => void writeIntoCorpus()} disabled={!topic.trim()}>
+                  基于资料写作
+                </button>
+              )}
+            </div>
+            {status && (
+              <p style={{ ...styles.status, color: phase === 'error' ? '#c0392b' : '#666' }}>
+                {running && <span style={styles.pulse} />}
+                {status}
+              </p>
+            )}
+            {draft && (
+              <article style={styles.draft}>
+                {draft}
+                {running && <span style={styles.caret} />}
+              </article>
+            )}
+          </div>
+        ) : (
           <div>
             <header style={styles.viewHeader}>
               {titleEditing ? (
@@ -425,8 +564,8 @@ export function WriteStudio() {
                 >
                   删除
                 </button>
-                <button style={styles.btn} onClick={newWrite}>
-                  ＋ 新写作
+                <button style={styles.btn} onClick={() => void createNewCorpus()}>
+                  ＋ 新建
                 </button>
               </div>
             </header>
@@ -481,52 +620,22 @@ export function WriteStudio() {
               />
             )}
           </div>
-        ) : (
-          <>
-            <div style={styles.inputRow}>
-              <input
-                style={styles.input}
-                value={topic}
-                placeholder="输入一个热点主题，例如：AI 编程助手正在改变初级开发者的价值"
-                onChange={(e) => setTopic(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void start();
-                }}
-                disabled={running}
-              />
-              {running ? (
-                <button style={{ ...styles.btn, ...styles.stopBtn }} onClick={stop}>
-                  停止
-                </button>
-              ) : (
-                <button style={styles.btn} onClick={() => void start()} disabled={!topic.trim()}>
-                  写作
-                </button>
-              )}
-            </div>
-
-            {status && (
-              <p style={{ ...styles.status, color: phase === 'error' ? '#c0392b' : '#666' }}>
-                {running && <span style={styles.pulse} />}
-                {status}
-              </p>
-            )}
-
-            {draft && (
-              <article style={styles.draft}>
-                {draft}
-                {running && <span style={styles.caret} />}
-              </article>
-            )}
-          </>
         )}
       </div>
 
-      {!selected && (
+      <CorpusSidebar
+        projectId={selected?.id ?? null}
+        cards={cards}
+        busy={corpusBusy}
+        onUrl={onAddUrl}
+        onText={onAddText}
+        onImage={onAddImageFile}
+        onRemove={onRemoveCard}
+      >
         <HotspotSidebar
           hotspots={hotspots}
           refreshing={refreshing}
-          onSelect={onPickHotspot}
+          onSelect={onAddHotspot}
           onRefresh={() => void doRefreshHotspots()}
           onDismiss={(h) => void onDismissHotspot(h)}
         >
@@ -537,7 +646,7 @@ export function WriteStudio() {
             onRemove={(url) => void onRemoveFeed(url)}
           />
         </HotspotSidebar>
-      )}
+      </CorpusSidebar>
     </section>
   );
 }
@@ -551,6 +660,8 @@ function safeFilename(title: string): string {
 const styles: Record<string, React.CSSProperties> = {
   layout: { marginTop: 24, display: 'flex', gap: 24, alignItems: 'flex-start' },
   main: { flex: 1, minWidth: 0, maxWidth: 720 },
+  landing: { display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'flex-start', padding: '32px 0' },
+  landingText: { margin: 0, fontSize: 14, color: '#666', lineHeight: 1.7 },
   inputRow: { display: 'flex', gap: 8 },
   input: {
     flex: 1,

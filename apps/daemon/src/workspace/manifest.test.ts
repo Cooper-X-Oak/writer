@@ -19,6 +19,7 @@ describe('buildManifest', () => {
       kind: 'article',
       renderer: 'html',
       entry: ARTIFACT_FILE,
+      stage: 'draft',
     });
   });
 });
@@ -30,7 +31,24 @@ describe('manifestToProject', () => {
       dir: '/p/id1',
       title: '标题',
       createdAt: '2026-06-22T00:00:00.000Z',
+      stage: 'draft',
     });
+  });
+});
+
+describe('manifest stage', () => {
+  it('buildManifest defaults stage to draft and accepts an explicit corpus stage', () => {
+    expect(SAMPLE.stage).toBe('draft');
+    expect(buildManifest({ id: 'c', title: 't', topic: 't', createdAt: 'now', stage: 'corpus' }).stage).toBe('corpus');
+  });
+  it('parseManifest reads stage, defaults a legacy manifest (no stage) to draft, drops a bad stage', () => {
+    expect(parseManifest(JSON.stringify({ id: 'x', title: 'T', createdAt: 'now', entry: 'a.html', stage: 'corpus' }))?.stage).toBe('corpus');
+    expect(parseManifest(JSON.stringify({ id: 'x', title: 'T', createdAt: 'now', entry: 'a.html' }))?.stage).toBe('draft');
+    expect(parseManifest(JSON.stringify({ id: 'x', title: 'T', createdAt: 'now', entry: 'a.html', stage: 'bogus' }))?.stage).toBe('draft');
+  });
+  it('manifestToProject forwards stage onto the Project DTO', () => {
+    const m = buildManifest({ id: 'c', title: 't', topic: 't', createdAt: 'now', stage: 'corpus' });
+    expect(manifestToProject(m, '/p/c').stage).toBe('corpus');
   });
 });
 

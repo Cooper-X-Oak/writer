@@ -3,6 +3,9 @@
 
 import type { WriteSource } from './write.js';
 
+/** Lifecycle stage: a bare material corpus → an outline → a drafted article. */
+export type ProjectStage = 'corpus' | 'outline' | 'draft';
+
 export interface Project {
   id: string;
   /** Absolute path to the workspace directory (short-hashed on Windows — see docs/windows-compat.md). */
@@ -12,4 +15,6 @@ export interface Project {
   createdAt: string;
   /** Where this draft originated, when seeded from a collected hotspot. Absent for typed topics. */
   source?: WriteSource;
+  /** Lifecycle stage. Legacy manifests (no stage) read as 'draft'. */
+  stage: ProjectStage;
 }

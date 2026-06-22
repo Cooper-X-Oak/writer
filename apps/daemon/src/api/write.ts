@@ -29,15 +29,26 @@ export interface WriteHandle {
 
 /** Starts a write run and reports progress via callbacks; returns an abort handle. `source` (when
  *  the topic was seeded from a hotspot) is carried into the persisted project's provenance. */
-export type WriteEngine = (topic: string, cb: WriteCallbacks, source?: WriteSource) => WriteHandle;
+export type WriteEngine = (
+  topic: string,
+  cb: WriteCallbacks,
+  source?: WriteSource,
+  projectId?: string,
+) => WriteHandle;
 
 export interface EngineDeps {
   detect?: () => Promise<DetectResult>;
   spawnImpl?: typeof nodeSpawn;
   shell?: boolean;
   inactivityMs?: number;
-  /** Persist the finished draft; defaults to the shared filesystem store. Injectable for tests. */
-  persist?: (input: { topic: string; body: string; source?: WriteSource }) => Promise<{ id: string }>;
+  /** Persist the finished draft; defaults to the shared filesystem store. With a projectId it commits
+   *  INTO that project (corpus → draft); otherwise it creates a new one. Injectable for tests. */
+  persist?: (input: {
+    topic: string;
+    body: string;
+    source?: WriteSource;
+    projectId?: string;
+  }) => Promise<{ id: string }>;
   /** Prepare the three-axis system prompt as a temp file; defaults to the real writer. Injectable
    *  so tests don't touch the filesystem. */
   prepareSystemPrompt?: () => Promise<SystemPromptFile>;
@@ -51,9 +62,17 @@ const DEFAULT_INACTIVITY_MS = 120_000;
 // failure or abnormal exit becomes onError, NOT a silent onDone.
 export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
   const detect = deps.detect ?? (() => detectAgent(claudeCode));
-  const persist = deps.persist ?? ((input) => defaultProjectStore.create(input));
+  const persist =
+    deps.persist ??
+    (async (input) => {
+      if (input.projectId) {
+        const committed = await defaultProjectStore.commitDraft(input.projectId, input);
+        if (committed) return committed; // corpus → draft (fall through to create if it vanished)
+      }
+      return defaultProjectStore.create(input);
+    });
   const prepareSystemPrompt = deps.prepareSystemPrompt ?? (() => writeTempSystemPrompt(buildSystemPrompt()));
-  return (topic, cb, source) => {
+  return (topic, cb, source, projectId) => {
     let aborted = false;
     let errored = false;
     let gotResult = false;
@@ -76,7 +95,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
         cb.onDone(costUsd);
         return;
       }
-      persist({ topic, body: draft, source })
+      persist({ topic, body: draft, source, projectId })
         .then((project) => cb.onDone(costUsd, project.id))
         .catch((err: unknown) => {
           cb.onStatus(`draft not saved: ${err instanceof Error ? err.message : String(err)}`);
@@ -160,7 +179,7 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
   // AND the application/json body (a non-simple content-type that forces a CORS preflight). Do NOT
   // relax to text/plain or add a GET trigger without an explicit anti-CSRF token.
   router.post('/agent/write', (req: Request, res: Response) => {
-    const body = req.body as { topic?: unknown; source?: unknown };
+    const body = req.body as { topic?: unknown; source?: unknown; projectId?: unknown };
     const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
     if (!topic) {
       res.status(400).json({ error: 'topic is required' });
@@ -169,6 +188,7 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
     // A malformed/non-http(s) source is ignored (treated as absent), never a 400 — provenance must
     // never block a write.
     const source = parseWriteSource(body.source);
+    const projectId = typeof body.projectId === 'string' ? body.projectId : undefined;
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -204,6 +224,7 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
         },
       },
       source,
+      projectId,
     );
 
     // Detect a real client disconnect via the RESPONSE stream. NOTE: req.on('close') is wrong here —
