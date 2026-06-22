@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listProjects, getArtifact, patchBlock, exportHtmlUrl, fetchExportHtml } from './projects';
+import { listProjects, getArtifact, patchBlock, exportHtmlUrl, fetchExportHtml, insertBlockAfter, deleteBlock, moveBlock, renameTitle } from './projects';
 import type { Project } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -83,6 +83,40 @@ describe('patchBlock', () => {
 
   it('throws when the response is not ok', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response));
-    await expect(patchBlock('p1', 'b9', 'x')).rejects.toThrow(/patch block failed: 404/);
+    await expect(patchBlock('p1', 'b9', 'x')).rejects.toThrow(/block patch failed: 404/);
+  });
+});
+
+describe('structural block ops', () => {
+  const okHtml = (html: string) =>
+    vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ html }) } as unknown as Response);
+
+  it('insertBlockAfter / deleteBlock / moveBlock POST the right URL+body and return html', async () => {
+    const fetchMock = okHtml('<h1>new</h1>');
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await insertBlockAfter('p1', 'b0', 'hi')).toBe('<h1>new</h1>');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/block/insert');
+
+    expect(await deleteBlock('p1', 'b1')).toBe('<h1>new</h1>');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/block/delete');
+
+    expect(await moveBlock('p1', 'b1', 'up')).toBe('<h1>new</h1>');
+    const [, moveInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    expect(JSON.parse(String(moveInit.body))).toEqual({ blockId: 'b1', direction: 'up' });
+  });
+
+  it('renameTitle PATCHes /title and returns {html,title}', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ html: '<h1>新</h1>', title: '新' }) } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await renameTitle('p1', '新')).toEqual({ html: '<h1>新</h1>', title: '新' });
+    const [u, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(u)).toContain('/projects/p1/title');
+    expect(init.method).toBe('PATCH');
+  });
+
+  it('throw on non-ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as unknown as Response));
+    await expect(insertBlockAfter('p1', 'b0')).rejects.toThrow(/block \/insert failed: 500/);
+    await expect(renameTitle('p1', 'x')).rejects.toThrow(/rename failed: 500/);
   });
 });

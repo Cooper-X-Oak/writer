@@ -27,6 +27,9 @@ import {
   buildSelfContainedHtml,
   collectImageSrcs,
   patchBody,
+  insertBlockAfter as insertBlockInBody,
+  deleteBlock as deleteBlockInBody,
+  moveBlock as moveBlockInBody,
   blockIdToIndex,
   splitBlocks,
   imageBlockMarkdown,
@@ -66,6 +69,14 @@ export interface ProjectStore {
   /** Replace one block's text and re-render. Returns the new HTML, or undefined if the id/block is
    *  unknown/unsafe. */
   patchBlock(id: string, blockId: string, text: string): Promise<{ html: string } | undefined>;
+  /** Insert a new paragraph after the given block and re-render. (Structural: renumbers blocks.) */
+  insertBlockAfter(id: string, blockId: string, text: string): Promise<{ html: string } | undefined>;
+  /** Delete a block and re-render (refuses to empty the article). (Structural: renumbers blocks.) */
+  deleteBlock(id: string, blockId: string): Promise<{ html: string } | undefined>;
+  /** Move a block up/down and re-render. (Structural: renumbers blocks.) */
+  moveBlock(id: string, blockId: string, direction: 'up' | 'down'): Promise<{ html: string } | undefined>;
+  /** Rename the project title (manifest + article h1). Returns new HTML + title, or undefined. */
+  renameTitle(id: string, title: string): Promise<{ html: string; title: string } | undefined>;
   /** Save a generated image, append it as an image block, re-render. Returns the new HTML +
    *  filename, or undefined if the id/content-type is unknown/unsafe. */
   addImage(id: string, input: AddImageInput): Promise<{ html: string; name: string } | undefined>;
@@ -116,6 +127,35 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
   const root = deps.root ?? projectsRoot();
   const genId = deps.genId ?? (() => createProjectId());
   const now = deps.now ?? (() => new Date());
+
+  // Shared body-edit pipeline for patch/insert/delete/move: guard id → resolve+validate block index
+  // → read body+manifest → apply the (pure) transform → re-render+persist the body/artifact triple.
+  // Returns undefined (→ 404) for unknown/unsafe id or out-of-range block; never throws.
+  async function editBlocks(
+    id: string,
+    blockId: string,
+    transform: (body: string, index: number) => string,
+  ): Promise<{ html: string } | undefined> {
+    if (!isSafeProjectId(id)) return undefined;
+    const index = blockIdToIndex(blockId);
+    if (index === undefined) return undefined;
+    const dir = projectDir(root, id);
+    let body: string;
+    let manifest: ProjectManifest | undefined;
+    try {
+      body = await readFile(bodyPath(dir), 'utf8');
+      manifest = parseManifest(await readFile(manifestPath(dir), 'utf8'));
+    } catch {
+      return undefined;
+    }
+    if (!manifest || index >= splitBlocks(body).length) return undefined;
+
+    const nextBody = transform(body, index);
+    const html = buildArticleHtml(manifest.title, nextBody);
+    await atomicWrite(dir, BODY_FILE, `${nextBody.trim()}\n`);
+    await atomicWrite(dir, ARTIFACT_FILE, html);
+    return { html };
+  }
 
   async function loadImage(
     id: string,
@@ -197,9 +237,28 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
     },
 
     async patchBlock(id, blockId, text) {
+      return editBlocks(id, blockId, (body, index) => patchBody(body, index, text));
+    },
+
+    async insertBlockAfter(id, blockId, text) {
+      const paragraph = text.trim() || '新段落'; // placeholder so splitBlocks doesn't drop an empty insert
+      return editBlocks(id, blockId, (body, index) => insertBlockInBody(body, index, paragraph));
+    },
+
+    async deleteBlock(id, blockId) {
+      return editBlocks(id, blockId, (body, index) => deleteBlockInBody(body, index));
+    },
+
+    async moveBlock(id, blockId, direction) {
+      return editBlocks(id, blockId, (body, index) =>
+        moveBlockInBody(body, index, direction === 'up' ? index - 1 : index + 1),
+      );
+    },
+
+    async renameTitle(id, title) {
       if (!isSafeProjectId(id)) return undefined;
-      const index = blockIdToIndex(blockId);
-      if (index === undefined) return undefined;
+      const t = title.trim();
+      if (!t) return undefined;
       const dir = projectDir(root, id);
       let body: string;
       let manifest: ProjectManifest | undefined;
@@ -209,14 +268,13 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
       } catch {
         return undefined;
       }
-      if (!manifest || index >= splitBlocks(body).length) return undefined;
-
-      const nextBody = patchBody(body, index, text);
-      const html = buildArticleHtml(manifest.title, nextBody);
-      // body (source) then artifact (derived) — both atomic.
-      await atomicWrite(dir, BODY_FILE, `${nextBody.trim()}\n`);
+      if (!manifest) return undefined;
+      const nextManifest: ProjectManifest = { ...manifest, title: t }; // preserves topic/createdAt/source/…
+      const html = buildArticleHtml(t, body);
+      // artifact (derived) first, manifest (commit marker) LAST — same invariant as create.
       await atomicWrite(dir, ARTIFACT_FILE, html);
-      return { html };
+      await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(nextManifest, null, 2)}\n`);
+      return { html, title: t };
     },
 
     async addImage(id, { bytes, contentType, alt }) {

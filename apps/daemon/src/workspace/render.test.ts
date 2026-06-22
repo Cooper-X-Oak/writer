@@ -8,6 +8,9 @@ import {
   splitBlocks,
   blockIdToIndex,
   patchBody,
+  insertBlockAfter,
+  deleteBlock,
+  moveBlock,
   imageBlockMarkdown,
 } from './render.js';
 
@@ -41,6 +44,41 @@ describe('patchBody', () => {
   it('returns the body unchanged for an out-of-range index', () => {
     expect(patchBody('a\n\nb', 5, 'x')).toBe('a\n\nb');
     expect(patchBody('a\n\nb', -1, 'x')).toBe('a\n\nb');
+  });
+});
+
+describe('insertBlockAfter', () => {
+  it('inserts a new block after the given index, shifting the rest', () => {
+    expect(insertBlockAfter('a\n\nb\n\nc', 0, 'NEW')).toBe('a\n\nNEW\n\nb\n\nc');
+    expect(insertBlockAfter('a\n\nb', 1, 'NEW')).toBe('a\n\nb\n\nNEW');
+  });
+  it('trims inserted text and leaves the input unchanged for an out-of-range index', () => {
+    expect(insertBlockAfter('a\n\nb', 5, 'x')).toBe('a\n\nb');
+    expect(insertBlockAfter('a', 0, '  spaced  ')).toBe('a\n\nspaced');
+  });
+});
+
+describe('deleteBlock', () => {
+  it('removes the block at index, shifting the rest', () => {
+    expect(deleteBlock('a\n\nb\n\nc', 1)).toBe('a\n\nc');
+  });
+  it('refuses to delete the only remaining block (never empties the article)', () => {
+    expect(deleteBlock('only', 0)).toBe('only');
+  });
+  it('returns the body unchanged for an out-of-range index', () => {
+    expect(deleteBlock('a\n\nb', 9)).toBe('a\n\nb');
+  });
+});
+
+describe('moveBlock', () => {
+  it('moves a block up and down', () => {
+    expect(moveBlock('a\n\nb\n\nc', 2, 1)).toBe('a\n\nc\n\nb');
+    expect(moveBlock('a\n\nb\n\nc', 0, 2)).toBe('b\n\nc\n\na');
+  });
+  it('is a no-op at boundaries / same position / out of range', () => {
+    expect(moveBlock('a\n\nb', 0, -1)).toBe('a\n\nb'); // first up
+    expect(moveBlock('a\n\nb', 1, 2)).toBe('a\n\nb'); // last down
+    expect(moveBlock('a\n\nb', 1, 1)).toBe('a\n\nb'); // same
   });
 });
 

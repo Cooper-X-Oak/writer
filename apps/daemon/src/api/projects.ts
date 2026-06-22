@@ -54,6 +54,69 @@ export function createProjectsRouter(store: ProjectStore = createProjectStore())
       .catch(() => res.status(500).json({ error: 'failed to patch block' }));
   });
 
+  // Insert a new paragraph after the selected block, re-render. (Structural: renumbers blocks; the
+  // client must re-sync from the returned HTML and drop its cached blockId.)
+  router.post('/projects/:id/block/insert', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = req.body as { blockId?: unknown; text?: unknown };
+    const blockId = typeof body.blockId === 'string' ? body.blockId : '';
+    const text = typeof body.text === 'string' ? body.text : ''; // empty → store inserts a placeholder
+    if (!blockId) {
+      res.status(400).json({ error: 'blockId is required' });
+      return;
+    }
+    store
+      .insertBlockAfter(id, blockId, text)
+      .then((result) => (result ? res.json(result) : res.status(404).json({ error: 'project or block not found' })))
+      .catch(() => res.status(500).json({ error: 'failed to insert block' }));
+  });
+
+  // Delete a block, re-render. (Structural: renumbers blocks; refuses to empty the article.)
+  router.post('/projects/:id/block/delete', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = req.body as { blockId?: unknown };
+    const blockId = typeof body.blockId === 'string' ? body.blockId : '';
+    if (!blockId) {
+      res.status(400).json({ error: 'blockId is required' });
+      return;
+    }
+    store
+      .deleteBlock(id, blockId)
+      .then((result) => (result ? res.json(result) : res.status(404).json({ error: 'project or block not found' })))
+      .catch(() => res.status(500).json({ error: 'failed to delete block' }));
+  });
+
+  // Move a block up/down, re-render. (Structural: renumbers blocks.)
+  router.post('/projects/:id/block/move', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = req.body as { blockId?: unknown; direction?: unknown };
+    const blockId = typeof body.blockId === 'string' ? body.blockId : '';
+    const direction = body.direction === 'up' || body.direction === 'down' ? body.direction : '';
+    if (!blockId || !direction) {
+      res.status(400).json({ error: 'blockId and direction (up|down) are required' });
+      return;
+    }
+    store
+      .moveBlock(id, blockId, direction)
+      .then((result) => (result ? res.json(result) : res.status(404).json({ error: 'project or block not found' })))
+      .catch(() => res.status(500).json({ error: 'failed to move block' }));
+  });
+
+  // Rename the project title (manifest + article h1). State-changing → guarded by loopback CORS.
+  router.patch('/projects/:id/title', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = req.body as { title?: unknown };
+    const title = typeof body.title === 'string' ? body.title : '';
+    if (!title.trim()) {
+      res.status(400).json({ error: 'title is required' });
+      return;
+    }
+    store
+      .renameTitle(id, title)
+      .then((result) => (result ? res.json(result) : res.status(404).json({ error: 'project not found' })))
+      .catch(() => res.status(500).json({ error: 'failed to rename project' }));
+  });
+
   // Add a generated image. Body is the raw image bytes (Content-Type = image/*); alt via ?alt=.
   // Only the Electron main process calls this (it holds the BYOK key and fetched the image).
   router.post(

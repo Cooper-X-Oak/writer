@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project, Hotspot, WriteSource } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
-import { listProjects, getArtifact, patchBlock, fetchExportHtml } from '../lib/api/projects';
+import {
+  listProjects,
+  getArtifact,
+  patchBlock,
+  insertBlockAfter,
+  deleteBlock,
+  moveBlock,
+  renameTitle,
+  fetchExportHtml,
+} from '../lib/api/projects';
 import { listHotspots, refreshHotspots } from '../lib/api/hotspots';
 import { rewrite } from '../lib/api/rewrite';
 import { projectImageBase } from '../lib/api/base';
@@ -11,10 +20,14 @@ import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
 import { HotspotSidebar } from './hotspot-sidebar';
 import { ArticleView } from './article-view';
+import { BlockToolbar } from './block-toolbar';
 import { RewritePanel } from './rewrite-panel';
+import { EditPanel } from './edit-panel';
 import { ImagePanel } from './image-panel';
 
 type Phase = 'idle' | 'running' | 'done' | 'error';
+/** Which panel is open for the selected block: the action menu, AI rewrite, or manual edit. */
+type PanelMode = 'menu' | 'rewrite' | 'edit';
 interface Selection {
   blockId: string;
   text: string;
@@ -30,9 +43,13 @@ export function WriteStudio() {
   const [selectedHtml, setSelectedHtml] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [panelMode, setPanelMode] = useState<PanelMode>('menu');
+  const [busy, setBusy] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | undefined>(undefined);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const [exporting, setExporting] = useState(false);
   const [hasBridge, setHasBridge] = useState(false);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
@@ -138,8 +155,10 @@ export function WriteStudio() {
   const clearEdit = (): void => {
     setEditMode(false);
     setSelection(null);
+    setPanelMode('menu');
     setInstruction('');
     setRewriteError(undefined);
+    setTitleEditing(false);
   };
 
   const openProject = async (project: Project): Promise<void> => {
@@ -177,6 +196,8 @@ export function WriteStudio() {
 
   const onSelectBlock = useCallback((blockId: string, text: string): void => {
     setSelection({ blockId, text });
+    setPanelMode('menu'); // open the action toolbar; user picks rewrite / edit / move / insert / delete
+    setInstruction('');
     setRewriteError(undefined);
   }, []);
 
@@ -194,6 +215,47 @@ export function WriteStudio() {
       setRewriteError(err instanceof Error ? err.message : String(err));
     } finally {
       setRewriting(false);
+    }
+  };
+
+  // Structural ops renumber the positional block ids, so EVERY one re-renders from the returned HTML
+  // and CLEARS the now-stale selection (same discipline as doRewrite).
+  const runStructural = async (op: (id: string, blockId: string) => Promise<string>): Promise<void> => {
+    if (!selected || !selection || busy) return;
+    setBusy(true);
+    setRewriteError(undefined);
+    try {
+      const html = await op(selected.id, selection.blockId);
+      setSelectedHtml(html);
+      setSelection(null);
+      setPanelMode('menu');
+    } catch (err: unknown) {
+      setRewriteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doManualEdit = async (text: string): Promise<void> => {
+    await runStructural((id, blockId) => patchBlock(id, blockId, text));
+  };
+
+  const doRenameTitle = async (): Promise<void> => {
+    if (!selected) return;
+    const t = titleDraft.trim();
+    if (!t || t === selected.title) {
+      setTitleEditing(false);
+      return;
+    }
+    try {
+      const r = await renameTitle(selected.id, t);
+      setSelectedHtml(r.html);
+      setSelected((s) => (s ? { ...s, title: r.title } : s));
+      void refreshProjects();
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTitleEditing(false);
     }
   };
 
@@ -247,7 +309,30 @@ export function WriteStudio() {
         {selected ? (
           <div>
             <header style={styles.viewHeader}>
-              <h2 style={styles.viewTitle}>{selected.title}</h2>
+              {titleEditing ? (
+                <input
+                  style={styles.titleInput}
+                  value={titleDraft}
+                  autoFocus
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => void doRenameTitle()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void doRenameTitle();
+                    else if (e.key === 'Escape') setTitleEditing(false);
+                  }}
+                />
+              ) : (
+                <h2
+                  style={styles.viewTitle}
+                  title="点击修改标题"
+                  onClick={() => {
+                    setTitleDraft(selected.title);
+                    setTitleEditing(true);
+                  }}
+                >
+                  {selected.title}
+                </h2>
+              )}
               <div style={styles.viewActions}>
                 <button
                   style={{ ...styles.btn, ...styles.ghostBtn, ...(editMode ? styles.editOn : null) }}
@@ -280,7 +365,7 @@ export function WriteStudio() {
               </div>
             </header>
             {status && <p style={{ ...styles.status, color: '#666' }}>{status}</p>}
-            {editMode && !selection && <p style={styles.hint}>点击文章里的任意一段，让 AI 帮你改写。</p>}
+            {editMode && !selection && <p style={styles.hint}>点击文章里的任意一段：可手动编辑、AI 改写、移动、插入或删除。</p>}
             {selectedHtml == null ? (
               <p style={styles.status}>加载中…</p>
             ) : (
@@ -292,7 +377,22 @@ export function WriteStudio() {
               />
             )}
             {!selection && <ImagePanel projectId={selected.id} title={selected.title} onGenerated={setSelectedHtml} />}
-            {selection && (
+            {selection && panelMode === 'menu' && (
+              <>
+                <BlockToolbar
+                  busy={busy}
+                  onRewrite={() => setPanelMode('rewrite')}
+                  onEdit={() => setPanelMode('edit')}
+                  onMoveUp={() => void runStructural((id, b) => moveBlock(id, b, 'up'))}
+                  onMoveDown={() => void runStructural((id, b) => moveBlock(id, b, 'down'))}
+                  onInsertAfter={() => void runStructural((id, b) => insertBlockAfter(id, b))}
+                  onDelete={() => void runStructural((id, b) => deleteBlock(id, b))}
+                  onCancel={() => setSelection(null)}
+                />
+                {rewriteError && <p style={styles.errorLine}>{rewriteError}</p>}
+              </>
+            )}
+            {selection && panelMode === 'rewrite' && (
               <RewritePanel
                 selectedText={selection.text}
                 instruction={instruction}
@@ -300,10 +400,16 @@ export function WriteStudio() {
                 error={rewriteError}
                 onInstructionChange={setInstruction}
                 onRewrite={() => void doRewrite()}
-                onCancel={() => {
-                  setSelection(null);
-                  setRewriteError(undefined);
-                }}
+                onCancel={() => setPanelMode('menu')}
+              />
+            )}
+            {selection && panelMode === 'edit' && (
+              <EditPanel
+                selectedText={selection.text}
+                saving={busy}
+                error={rewriteError}
+                onSave={(text) => void doManualEdit(text)}
+                onCancel={() => setPanelMode('menu')}
               />
             )}
           </div>
@@ -394,7 +500,20 @@ const styles: Record<string, React.CSSProperties> = {
   ghostBtn: { color: '#111', background: '#fff', border: '1px solid #d0d0d0' },
   editOn: { color: '#fff', background: '#2ecc71', border: '1px solid #2ecc71' },
   hint: { margin: '0 0 12px', fontSize: 13, color: '#2e8b57' },
-  viewTitle: { margin: 0, fontSize: 20, color: '#1a1a1a' },
+  viewTitle: { margin: 0, fontSize: 20, color: '#1a1a1a', cursor: 'text' },
+  titleInput: {
+    margin: 0,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 12,
+    padding: '4px 8px',
+    fontSize: 20,
+    color: '#1a1a1a',
+    border: '1px solid #2ecc71',
+    borderRadius: 6,
+    outline: 'none',
+  },
+  errorLine: { marginTop: 8, fontSize: 13, color: '#c0392b' },
   status: { marginTop: 12, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 },
   pulse: {
     display: 'inline-block',
