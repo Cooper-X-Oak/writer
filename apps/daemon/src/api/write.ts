@@ -9,7 +9,8 @@ import type { spawn as nodeSpawn } from 'node:child_process';
 import { claudeCode, detectAgent, type DetectResult } from '@app/agent-defs';
 import type { WriteStreamEvent } from '@app/contracts';
 import { startAgentRun, type AgentRunHandle } from '../agent/runner.js';
-import { buildWritePrompt } from '../agent/prompt.js';
+import { buildWritePrompt, buildSystemPrompt } from '../agent/prompt.js';
+import { writeTempSystemPrompt, type SystemPromptFile } from '../agent/prompts/sysprompt-file.js';
 import { buildDiagnosis } from '../agent/diagnose.js';
 import { defaultProjectStore } from '../workspace/store.js';
 
@@ -35,6 +36,9 @@ export interface EngineDeps {
   inactivityMs?: number;
   /** Persist the finished draft; defaults to the shared filesystem store. Injectable for tests. */
   persist?: (input: { topic: string; body: string }) => Promise<{ id: string }>;
+  /** Prepare the three-axis system prompt as a temp file; defaults to the real writer. Injectable
+   *  so tests don't touch the filesystem. */
+  prepareSystemPrompt?: () => Promise<SystemPromptFile>;
 }
 
 const STDERR_TAIL_MAX = 500;
@@ -46,6 +50,7 @@ const DEFAULT_INACTIVITY_MS = 120_000;
 export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
   const detect = deps.detect ?? (() => detectAgent(claudeCode));
   const persist = deps.persist ?? ((input) => defaultProjectStore.create(input));
+  const prepareSystemPrompt = deps.prepareSystemPrompt ?? (() => writeTempSystemPrompt(buildSystemPrompt()));
   return (topic, cb) => {
     let aborted = false;
     let errored = false;
@@ -54,6 +59,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
     let stderrTail = '';
     let draft = '';
     let run: AgentRunHandle | undefined;
+    let sysPrompt: SystemPromptFile | undefined;
 
     const fail = (message: string): void => {
       if (errored) return;
@@ -85,10 +91,22 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
         return;
       }
 
+      // Materialize the three-axis system prompt as a temp file (passed by path to the CLI).
+      try {
+        sysPrompt = await prepareSystemPrompt();
+      } catch (err: unknown) {
+        fail(`could not prepare writing instructions: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+      if (aborted) {
+        sysPrompt.cleanup();
+        return;
+      }
+
       cb.onStatus('writing');
       run = startAgentRun({
         def: claudeCode,
-        ctx: { partialMessages: true },
+        ctx: { partialMessages: true, systemPromptFile: sysPrompt.path },
         prompt: buildWritePrompt(topic),
         spawnImpl: deps.spawnImpl,
         shell: deps.shell,
@@ -108,6 +126,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
           stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_MAX);
         },
         onExit: (info) => {
+          sysPrompt?.cleanup(); // run is terminal — the CLI has long since read the file
           if (errored || aborted || info.aborted) return;
           if (gotResult && info.code === 0) {
             finishOk();
@@ -124,6 +143,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
       abort() {
         aborted = true;
         run?.abort();
+        sysPrompt?.cleanup();
       },
     };
   };

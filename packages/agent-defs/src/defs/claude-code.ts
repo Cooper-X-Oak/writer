@@ -35,6 +35,9 @@ export const claudeCode: RuntimeAgentDef = {
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
     if (ctx.partialMessages) args.push('--include-partial-messages');
     if (ctx.model) args.push('--model', ctx.model);
+    // Three-axis writing prompt (P3) — appended to the default system prompt, read from a file so a
+    // multi-KB prompt never hits the Windows command-line limit.
+    if (ctx.systemPromptFile) args.push('--append-system-prompt-file', ctx.systemPromptFile);
     for (const dir of ctx.extraDirs ?? []) args.push('--add-dir', dir);
     if (ctx.sessionId) args.push(ctx.resume ? '--resume' : '--session-id', ctx.sessionId);
     if (ctx.mcpConfigPath) args.push('--mcp-config', ctx.mcpConfigPath, '--strict-mcp-config');

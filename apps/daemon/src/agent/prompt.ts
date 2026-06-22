@@ -1,17 +1,15 @@
-// M1 writing prompt. A deliberately opinionated, anti-AI-slop brief — the precursor to the full
-// 3-axis injection (Skills + STYLE.md + craft/anti-ai-slop) landing in P3.
+// Writing prompt assembly (P3). The voice/craft/structure now live in the system prompt (three-axis
+// injection — see prompts/compose.ts), passed to the CLI via --append-system-prompt-file. The user
+// message is lean: just the task and the topic.
 
-const WRITE_BRIEF = `你是一名资深的热点内容创作者，为中文读者写观点鲜明的短文。
+import { composeSystemPrompt } from './prompts/compose.js';
 
-请就给定主题写一篇 600–900 字的中文文章，满足：
-- 有一个清晰的核心论点，开头直接切入，不要综述腔、不要背景铺垫一大段。
-- 结构利落：2–3 个有具体支撑的段落，结尾给一个判断或钩子，不要"综上所述"。
-- 拒绝 AI 套话：不写"在当今这个时代""随着……的不断发展""不仅……而且""值得注意的是"这类空转表达，不堆形容词和排比。
-- 用具体代替抽象：能举例、能给场景或数字就给，避免正确的废话。
-- 只输出文章正文，不要再解释你在做什么、不要使用任何工具、不要反问我。
+/** The three-axis writing system prompt (craft + style + template). Topic-agnostic. */
+export function buildSystemPrompt(): string {
+  return composeSystemPrompt();
+}
 
-主题：`;
-
+/** The per-request user message — minimal framing plus the topic. */
 export function buildWritePrompt(topic: string): string {
-  return WRITE_BRIEF + topic.trim();
+  return `请就以下主题写一篇文章，直接输出正文。\n\n主题：${topic.trim()}`;
 }

@@ -49,6 +49,15 @@ describe('claude-code def', () => {
     expect(joined).toContain('--mcp-config /mcp.json --strict-mcp-config');
   });
 
+  it('passes a system-prompt file by path (--append-system-prompt-file)', () => {
+    const args = claudeCode.buildArgs({ isRoot: false, systemPromptFile: '/tmp/sp.md' });
+    expect(args.join(' ')).toContain('--append-system-prompt-file /tmp/sp.md');
+  });
+
+  it('omits the system-prompt flag when no file is given', () => {
+    expect(claudeCode.buildArgs({ isRoot: false })).not.toContain('--append-system-prompt-file');
+  });
+
   it('uses --resume instead of --session-id when resuming', () => {
     const args = claudeCode.buildArgs({ isRoot: false, sessionId: 'sess', resume: true });
     expect(args.join(' ')).toContain('--resume sess');

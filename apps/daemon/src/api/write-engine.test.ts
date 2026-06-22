@@ -39,6 +39,8 @@ interface Captured {
   done: { called: boolean; cost?: number; projectId?: string };
   error?: string;
   persisted: { topic: string; body: string }[];
+  spawnArgs: string[];
+  spCleaned: boolean;
 }
 
 interface RunOpts {
@@ -52,13 +54,14 @@ async function run(
   script: (child: ReturnType<typeof fakeChild>) => void,
   opts: RunOpts = {},
 ): Promise<Captured> {
+  const cap: Captured = { status: [], deltas: [], done: { called: false }, persisted: [], spawnArgs: [], spCleaned: false };
+
   let child: ReturnType<typeof fakeChild> | undefined;
-  const spawnImpl = ((..._a: unknown[]) => {
+  const spawnImpl = ((_bin: string, args: string[]) => {
+    cap.spawnArgs = args; // shell:false → args is the raw buildArgs output
     child = fakeChild();
     return child;
   }) as unknown as typeof nodeSpawn;
-
-  const cap: Captured = { status: [], deltas: [], done: { called: false }, persisted: [] };
 
   // Default persist never touches the filesystem — it records and returns a fixed id.
   const persist =
@@ -74,6 +77,8 @@ async function run(
     shell: false,
     inactivityMs: 0,
     persist,
+    // fs-free system prompt: a fixed path + a cleanup that records it ran
+    prepareSystemPrompt: () => Promise.resolve({ path: '/fake/sp.md', cleanup: () => (cap.spCleaned = true) }),
   });
 
   await new Promise<void>((resolve) => {
@@ -116,6 +121,16 @@ describe('createDefaultEngine — terminal status mapping', () => {
     expect(cap.error).toBeUndefined();
     // the persisted body is the full accumulated draft, against the original topic
     expect(cap.persisted).toEqual([{ topic: '热点主题', body: '初级程序员的价值' }]);
+  });
+
+  it('passes the system-prompt file to the CLI and cleans it up on exit', async () => {
+    const cap = await run(READY, (child) => {
+      child.stdout.emit('data', textDelta('正文'));
+      child.stdout.emit('data', resultLine(false, 0.02));
+      child.emit('close', 0, null);
+    });
+    expect(cap.spawnArgs.join(' ')).toContain('--append-system-prompt-file /fake/sp.md');
+    expect(cap.spCleaned).toBe(true);
   });
 
   it('does not persist (or report a projectId) when the draft is empty', async () => {
