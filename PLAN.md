@@ -4,7 +4,10 @@
 > three-layer architecture, repurposed for a hotspot content workflow:
 > **collect → AI writing → AI illustration → doc-flow layout → AI re-edit → export**.
 
-Status: planning. Workspace is empty (greenfield). Replace the working title before Phase 0.
+Status: **MVP (P0–P9) shipped & merged to `main`** (repo public, CI green). Product direction
+reframed 2026-06-22 → **evidence-grounded writing**; see [ADR-0001](docs/adr/0001-evidence-grounded-writing.md)
+and §"Phase 2 — Evidence-grounded writing" at the end of this file. Sections 1–3 below are the
+MVP-as-built record; the §2 architecture is reused by Phase 2.
 
 ### Appendix docs (deep design)
 
@@ -14,6 +17,7 @@ Status: planning. Workspace is empty (greenfield). Replace the working title bef
 | [`docs/agent-layer.md`](docs/agent-layer.md) | `RuntimeAgentDef` interface fields, `claude-code` def pseudocode, the piped runner, detection state machine, **PoC-0**. |
 | [`docs/collect-scoring.md`](docs/collect-scoring.md) | Hotspot scoring (rules prefilter → model), provenance cross-verification, budget caps. |
 | [`docs/windows-compat.md`](docs/windows-compat.md) | ENAMETOOLONG, cmdline-length, ConPTY (deferred), chokidar atomic writes, fal.ai key storage. |
+| [`docs/adr/0001-evidence-grounded-writing.md`](docs/adr/0001-evidence-grounded-writing.md) | **The v2 direction decision** — 资料区 / 询证 / grounded outline + mapping / citation tracing / two-layer arch (tool + 叙事市场). |
 
 ---
 
@@ -246,3 +250,110 @@ DESIGN.md → STYLE.md, anti-design-slop → anti-AI-writing-tone, design-templa
 article layouts. Media: image only. Everything else (agent layer / artifact model /
 3-layer decoupling / preview / edit bridge / export) borrowed from the verified
 open-design architecture.
+
+---
+
+## Phase 2 — Evidence-grounded writing (direction v2 · 2026-06-22)
+
+> Reframe per [ADR-0001](docs/adr/0001-evidence-grounded-writing.md): from a linear
+> "collect → black-box generate → tweak" pipeline to **evidence-grounded, steerable
+> writing**. Supersedes §1 Core Value #1/#3; the §2 architecture is reused.
+
+### Thesis
+
+A hotspot — or an author's own idea — is only the *trigger*, not the content. The system
+turns it into a **资料区 (material corpus)** of 原始 / 补充 / 对比 material; the author + AI
+extract a thesis and a **grounded outline** (every node anchored to specific cards); draft
+node-by-node with every claim traceable to a card; a citation sidebar shows what was cited /
+what's unused. **Writing is synthesis over evidence, not blank-page generation.**
+
+### Workflow
+
+```
+入口A 发现热点 (HN/RSS/订阅源)  ┐
+                               ├─▶ 只是"由头"
+入口B 作者抛想法/角度/疑问      ┘        │
+                                        ▼
+  填料(两条路汇入同一资料区)
+   ① 自动: agent 巡热点 → 询证(抓取→去重→分类 原/补/对 → 交叉核验) ─┐
+   ② 人工: 丢 链接/图片/md/文本/代码 → 归一成「材料卡」 ───────────┴─▶ 资料区
+                                                                       │
+  出纲(统一一步)  资料区 ──AI──▶ 初始化大纲 { 主旨 · 叙事 · 节点↔材料映射 }
+                                       │  每节锚定证据卡, 大纲从材料长出来
+                                       ▼
+                          ④ 起草 逐节展开, 每论点带 [引用#] 回链
+                                       ▼
+                          ⑤ 精修 段内联AI + 撤销 + diff | 引用边栏(引用/未用/覆盖度)
+                                       ▼
+                          ⑥ 导出 正文 + 自动参考列表(可溯源)
+```
+
+### Two-layer architecture
+
+- **Layer 1 — per-article tool:** 填料(auto-询证 ∥ manual drop) → 资料区 → 初始化大纲 →
+  起草 → 精修 → 导出.
+- **Layer 2 — 叙事大纲市场 + 写作规范 (accumulating asset · deferred):** scenario-tagged
+  narrative templates + STYLE.md norms + expert prompts; human-or-agent picks; good articles'
+  skeletons flow back as new templates (flywheel). The **writing analog of open-design's
+  design-spec library** — raises standardized *writing* capability.
+- **Day-1 commitment:** 叙事 is a first-class `NarrativeTemplate { scenario, shape, slots,
+  norms }` from the start; the market grows from 1–2 built-ins **without a schema change.**
+
+### Core data model (new)
+
+```
+材料卡 Card { kind: link|image|md|text|code; origin: 询证|手工;
+              class: 原始|补充|对比; source?: {url,title,author,date};
+              content; confidence; tags; note }
+
+初始化大纲 Outline { thesis: "一句话主张";
+                    narrative: 总分总|对比|递进|时间线 (← NarrativeTemplate);
+                    nodes: [ { heading, intent, materialRefs: [cardId…] } ] }
+
+引用 Citation: article block ⇄ card(s)   // bidirectional, survives block renumber
+
+叙事模板 NarrativeTemplate { scenario: 锐评|深度|科普|洗稿|复盘…;
+                            shape; slots: [section roles]; norms }
+```
+
+### Reuse vs new
+
+| Reuse (already built) | New (this arc) |
+|---|---|
+| collection HN/RSS → extend to **询证 fan-out** | material-card model + 资料区 store/UI |
+| provenance / `WriteSource` → becomes a card | manual multi-format ingest + normalize |
+| write engine (delegate Claude Code) | 询证 gather (补充/对比 + cross-verify) |
+| edit bridge / block ops (positional-id) | 资料区 → 初始化大纲 + node↔material mapping |
+| export HTML/PDF | `NarrativeTemplate` (1–2 built-in) + outline editor |
+| SSRF/XXE guards, path safety, store discipline | cited draft (node-from-cards) + citation tracing/sidebar |
+
+### Phases (each = one acceptance milestone)
+
+- **W1 资料区基座** — material-card model (link/image/md/text/code), 资料区 store + UI, manual
+  drop → normalize → card; provenance→card. *Accept:* drop a link/text/image → persisted card
+  appears in 资料区.
+- **W2 询证抓取** — fan out from a hotspot/seed → gather 补充/对比 + classify 原/补/对 +
+  cross-verify. *Accept:* one hotspot fills 资料区 with primary + supplementary + contrasting
+  cards, classified.
+- **W3 初始化大纲 + 映射** — 资料区 → AI → outline `{主旨, 叙事(template slots), node↔material}`;
+  `NarrativeTemplate` first-class (1–2 built-in); outline editor (reorder/edit/attach material).
+  *Accept:* from a filled 资料区, generate an editable outline whose nodes map to cards.
+- **W4 基于材料起草 + 引用** — expand each node from its cards; inline `[引用#]` resolve to cards.
+  *Accept:* draft generated with working citations.
+- **W5 精修 + 引用边栏** — per-paragraph inline AI (rewrite/expand/shorten/tone/"support with
+  card N") + undo; citation sidebar (cited/unused/coverage) + bidirectional highlight. *Accept:*
+  edit a paragraph using a card; coverage updates; card↔citation navigation works.
+- **W6 导出带引用** — export HTML/PDF with an auto reference list, each entry traceable.
+  *Accept:* exported article has a references section linking sources.
+- **W7+ 叙事大纲市场 (later)** — template library UI, scenario tagging, agent template selection,
+  flywheel abstraction, STYLE.md/craft norm library. *Accept:* pick a template from a library;
+  agent auto-selects by scenario.
+
+### Folds in the 2026-06-22 product/UX audit
+
+The reframe absorbs much of the audit backlog — the corpus + outline + cited refine loop create
+the missing interaction surfaces. Wire the already-built-but-dark capabilities as their stages
+land: hotspot **excerpt** preview (W2), **restore** endpoint / undo (W1/W5), **costUsd** display
++ **draft-preserve-on-fail** (W4), keyboard-accessible block selection (W5). Daemon-offline
+gating and streaming-liveness cues are interaction baselines to fix as those areas are touched.
+
