@@ -16,6 +16,7 @@
     "@app/contracts": "workspace:*",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "fast-xml-parser": "^5.9.3",
     "pino": "^9.5.0"
   },
   "devDependencies": {

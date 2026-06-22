@@ -9,3 +9,4 @@ export type { Health } from './api/health.js';
 export type { Project } from './api/project.js';
 export type { AgentDetectState, AgentFix, AgentDiagnosis } from './api/agent.js';
 export type { WriteRequest, WriteStreamEvent } from './api/write.js';
+export type { SourceType, Hotspot, HotspotSnapshot } from './api/collect.js';
