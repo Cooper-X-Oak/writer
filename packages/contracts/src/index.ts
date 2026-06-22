@@ -11,7 +11,7 @@ export type { AgentDetectState, AgentFix, AgentDiagnosis } from './api/agent.js'
 export type { WriteRequest, WriteStreamEvent, WriteSource } from './api/write.js';
 export type { SourceType, Hotspot, HotspotSnapshot, FeedsResponse } from './api/collect.js';
 export type {
-  CardKind, CardOrigin, CardClass, CardSource,
+  CardKind, CardOrigin, CardClass, CardStance, CardSource,
   CardLink, CardImage, CardMd, CardText, CardCode,
   MaterialCard, CorpusResponse,
 } from './api/corpus.js';

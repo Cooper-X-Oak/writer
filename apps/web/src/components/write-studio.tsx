@@ -12,6 +12,7 @@ import {
   addImageCard,
   addHotspotCard,
   removeCard,
+  runInquiry,
 } from '../lib/api/corpus';
 import { CorpusSidebar } from './corpus-sidebar';
 import {
@@ -73,6 +74,8 @@ export function WriteStudio() {
   const [feedsBusy, setFeedsBusy] = useState(false);
   const [cards, setCards] = useState<MaterialCard[]>([]);
   const [corpusBusy, setCorpusBusy] = useState(false);
+  const [useAgentInquiry, setUseAgentInquiry] = useState(false);
+  const [inquiringId, setInquiringId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const corpusCreatingRef = useRef<Promise<string | undefined> | null>(null);
 
@@ -248,6 +251,23 @@ export function WriteStudio() {
     const projectId = selected.id;
     setCards((cs) => cs.filter((c) => c.id !== cardId)); // optimistic
     void removeCard(projectId, cardId).catch(() => void loadCorpus(projectId));
+  };
+
+  // W2 询证: gather 补充/对比 evidence for an existing card seed, then reconcile the card list.
+  const inquireFor = async (cardId: string): Promise<void> => {
+    if (!selected || inquiringId) return;
+    const projectId = selected.id;
+    setInquiringId(cardId);
+    try {
+      const r = await runInquiry(projectId, { seedCardId: cardId, useAgent: useAgentInquiry });
+      setCards(await listMaterials(projectId));
+      const tier = r.usedAgent ? 'agent 核验' : '规则询证';
+      setStatus(r.added.length ? `询证：新增 ${String(r.added.length)} 条佐证 / 对比（${tier}）` : '询证：未找到新的佐证');
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInquiringId(null);
+    }
   };
 
   const onDismissHotspot = async (h: Hotspot): Promise<void> => {
@@ -631,6 +651,10 @@ export function WriteStudio() {
         onText={onAddText}
         onImage={onAddImageFile}
         onRemove={onRemoveCard}
+        onInquire={(id) => void inquireFor(id)}
+        inquiringId={inquiringId}
+        useAgent={useAgentInquiry}
+        onToggleAgent={setUseAgentInquiry}
       >
         <HotspotSidebar
           hotspots={hotspots}

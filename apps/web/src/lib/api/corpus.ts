@@ -68,3 +68,23 @@ export async function removeCard(projectId: string, cardId: string): Promise<voi
   const res = await fetch(`${materialsUrl(projectId)}/${encodeURIComponent(cardId)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`remove material failed: ${res.status}`);
 }
+
+export interface InquiryResult {
+  added: MaterialCard[];
+  skipped: { url: string; reason: string }[];
+  usedAgent: boolean;
+}
+
+/** W2 询证: gather 补充/对比 evidence for a seed (an existing card, a hotspot, or a query). */
+export async function runInquiry(
+  projectId: string,
+  input: { seedCardId?: string; hotspotId?: string; query?: string; useAgent?: boolean },
+): Promise<InquiryResult> {
+  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(projectId)}/inquiry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`inquiry failed: ${res.status}`);
+  return (await res.json()) as InquiryResult;
+}

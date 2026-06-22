@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createCorpusProject, listMaterials, addLinkCard, addImageCard, addHotspotCard, removeCard } from './corpus';
+import { createCorpusProject, listMaterials, addLinkCard, addImageCard, addHotspotCard, removeCard, runInquiry } from './corpus';
 import type { MaterialCard, Project } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -54,8 +54,20 @@ describe('corpus api client', () => {
     expect((d.mock.calls[0] as [string, RequestInit])[1].method).toBe('DELETE');
   });
 
+  it('runInquiry posts the seed + useAgent to /inquiry and returns the result', async () => {
+    const result = { added: [CARD], skipped: [], usedAgent: true };
+    const f = stub(result);
+    expect(await runInquiry('c1', { seedCardId: 'a', useAgent: true })).toEqual(result);
+    const [u, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(String(u)).toContain('/projects/c1/inquiry');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ seedCardId: 'a', useAgent: true });
+  });
+
   it('throws on a non-ok response', async () => {
     stub({}, false, 500);
     await expect(listMaterials('c1')).rejects.toThrow(/list materials failed: 500/);
+    stub({}, false, 404);
+    await expect(runInquiry('c1', { hotspotId: 'x' })).rejects.toThrow(/inquiry failed: 404/);
   });
 });

@@ -17,6 +17,16 @@ import { createProjectStore, type ProjectStore } from '../workspace/store.js';
 import { defaultHotspotStore, type HotspotStore } from '../collect/store.js';
 import { linkCard, textCard, mdCard, codeCard, hotspotToCard } from '../corpus/normalize.js';
 import { isFetchableUrl } from '../collect/fetch-util.js';
+import {
+  runInquiry,
+  seedFromHotspot,
+  seedFromCard,
+  seedFromQuery,
+  existingFromCards,
+  type AgentClassifier,
+  type Seed,
+} from '../collect/inquiry.js';
+import { defaultAgentClassifier } from '../collect/inquiry-agent.js';
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
@@ -24,6 +34,8 @@ export interface CorpusRouterDeps {
   store?: MaterialsStore;
   projectStore?: ProjectStore;
   hotspotStore?: HotspotStore;
+  /** Tier-B 询证 classifier; only invoked when the request opts in (useAgent). */
+  classifier?: AgentClassifier;
 }
 
 /** Build a card from a manual JSON drop. Returns undefined for an unknown kind, empty content, or an
@@ -47,6 +59,7 @@ export function createCorpusRouter(deps: CorpusRouterDeps = {}): Router {
   const store = deps.store ?? defaultMaterialsStore;
   const projectStore = deps.projectStore ?? createProjectStore();
   const hotspotStore = deps.hotspotStore ?? defaultHotspotStore;
+  const classifier = deps.classifier ?? defaultAgentClassifier;
   const router = Router();
 
   router.post('/projects/corpus', (req: Request, res: Response) => {
@@ -139,6 +152,60 @@ export function createCorpusRouter(deps: CorpusRouterDeps = {}): Router {
         });
       })
       .catch(() => res.status(500).json({ error: 'failed to add hotspot' }));
+  });
+
+  // W2 询证: gather 补充/对比 evidence for a seed (an existing 原始 card, a hotspot, or a free query)
+  // from the already-collected hotspot snapshot, classify (rule, or rule+agent when useAgent), and
+  // persist the new auto cards. CSRF: same loopback-CORS + JSON-preflight guard as the other POSTs.
+  router.post('/projects/:id/inquiry', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = (req.body ?? {}) as { hotspotId?: unknown; seedCardId?: unknown; query?: unknown; useAgent?: unknown };
+    const useAgent = body.useAgent === true;
+
+    void (async () => {
+      try {
+        const [existingCards, snapshot] = await Promise.all([store.list(id), hotspotStore.read()]);
+        const hotspots = snapshot?.hotspots ?? [];
+
+        let seed: Seed | undefined;
+        if (typeof body.seedCardId === 'string' && body.seedCardId) {
+          const card = existingCards.find((c) => c.id === body.seedCardId);
+          seed = card ? seedFromCard(card) : undefined;
+        } else if (typeof body.hotspotId === 'string' && body.hotspotId) {
+          const h = hotspots.find((x) => x.id === body.hotspotId);
+          seed = h ? seedFromHotspot(h) : undefined;
+        } else if (typeof body.query === 'string') {
+          seed = seedFromQuery(body.query);
+        }
+        if (!seed) {
+          res.status(400).json({ error: 'a valid seed (seedCardId | hotspotId | query) is required' });
+          return;
+        }
+
+        const result = await runInquiry({
+          seed,
+          hotspots,
+          existing: existingFromCards(existingCards),
+          classifier: useAgent ? classifier : undefined,
+        });
+
+        const added: MaterialCard[] = [];
+        const skipped: { url: string; reason: string }[] = [];
+        for (const card of result.cards) {
+          const saved = await store.addCard(id, card);
+          if (saved) added.push(saved);
+          else skipped.push({ url: card.content.url, reason: 'project not found or corpus full' });
+        }
+        // Candidates existed but none could persist → the project is missing or the corpus is full.
+        if (result.cards.length > 0 && added.length === 0) {
+          res.status(404).json({ error: 'project not found or corpus full' });
+          return;
+        }
+        res.json({ added, skipped, usedAgent: result.usedAgent });
+      } catch {
+        res.status(500).json({ error: 'failed to run inquiry' });
+      }
+    })();
   });
 
   router.delete('/projects/:id/materials/:cardId', (req: Request, res: Response) => {

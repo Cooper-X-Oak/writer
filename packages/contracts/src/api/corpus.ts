@@ -5,6 +5,8 @@
 export type CardKind = 'link' | 'image' | 'md' | 'text' | 'code';
 export type CardOrigin = 'auto' | 'manual'; // auto = 询证 (W2); manual = human drop (W1)
 export type CardClass = '原始' | '补充' | '对比'; // shown verbatim in the UI
+/** W2 cross-verify: how an auto-gathered evidence card relates to its seed. Absent on W1 manual cards. */
+export type CardStance = 'corroborate' | 'contradict' | 'neutral';
 
 /** Bibliographic provenance, orthogonal to content. Present on auto cards, optional on manual. */
 export interface CardSource {
@@ -29,6 +31,10 @@ interface CardBase {
   note: string;
   /** ISO-8601 — when we added it to the corpus. */
   addedAt: string;
+  /** W2 询证: ids of the seed card(s)/hotspot this evidence was gathered for. Drives 大纲-材料映射 (W3). */
+  relatedTo?: string[];
+  /** W2 cross-verify: does this evidence corroborate or contradict the seed? Absent on manual cards. */
+  stance?: CardStance;
 }
 
 export interface CardLink extends CardBase {
