@@ -15,6 +15,9 @@ export interface RuntimeBuildContext {
    *  runner must consume one source only. */
   partialMessages?: boolean;
   mcpConfigPath?: string;
+  /** Path to a file whose contents are appended to the agent's system prompt. Passed by path (not
+   *  inline) so a multi-KB prompt never hits the Windows argv length limit. */
+  systemPromptFile?: string;
   /** Override root detection (defaults to process.getuid?.() === 0). Mainly for tests. */
   isRoot?: boolean;
 }
