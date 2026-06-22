@@ -24,6 +24,7 @@ describe('ProjectStore', () => {
       dir: join(root, 'p1'),
       title: '远程办公',
       createdAt: '2026-06-22T00:00:00.000Z',
+      stage: 'draft',
     });
     const files = await readdir(join(root, 'p1'));
     expect(files).toContain(MANIFEST_FILE);
@@ -34,6 +35,18 @@ describe('ProjectStore', () => {
     const html = await store.readArtifact('p1');
     expect(html).toContain('<h1>远程办公</h1>');
     expect(html).toContain('<p data-block="b0">正文第一段。</p>');
+  });
+
+  it('createCorpus() writes a manifest-only corpus-stage project (no body/article)', async () => {
+    const store = createProjectStore({ root, genId: () => 'c1', now: () => new Date('2026-06-22T00:00:00.000Z') });
+    const project = await store.createCorpus({ title: '我的资料区' });
+    expect(project).toMatchObject({ id: 'c1', title: '我的资料区', stage: 'corpus' });
+    const files = await readdir(join(root, 'c1'));
+    expect(files).toContain(MANIFEST_FILE);
+    expect(files).not.toContain(ARTIFACT_FILE); // no article yet
+    expect(await store.readArtifact('c1')).toBeUndefined();
+    // it shows up in list() as a corpus-stage project
+    expect((await store.list()).find((p) => p.id === 'c1')?.stage).toBe('corpus');
   });
 
   it('list() returns saved projects newest-first', async () => {

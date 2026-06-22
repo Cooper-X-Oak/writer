@@ -18,11 +18,12 @@ function serve(store: ProjectStore): Promise<{ url: string; close: () => void }>
   });
 }
 
-const PROJECT: Project = { id: 'p1', dir: '/p/p1', title: '标题', createdAt: '2026-06-22T00:00:00.000Z' };
+const PROJECT: Project = { id: 'p1', dir: '/p/p1', title: '标题', createdAt: '2026-06-22T00:00:00.000Z', stage: 'draft' };
 
 function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
   return {
     create: over.create ?? (() => Promise.reject(new Error('not used'))),
+    createCorpus: over.createCorpus ?? (() => Promise.resolve({ ...PROJECT, stage: 'corpus' })),
     list: over.list ?? (() => Promise.resolve([PROJECT])),
     readArtifact: over.readArtifact ?? (() => Promise.resolve('<h1>hi</h1>')),
     readBody: over.readBody ?? (() => Promise.resolve('hi')),

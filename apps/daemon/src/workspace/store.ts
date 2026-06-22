@@ -61,6 +61,8 @@ export interface CreateProjectInput {
 
 export interface ProjectStore {
   create(input: CreateProjectInput): Promise<Project>;
+  /** Create a project that starts as a bare material corpus (manifest only, no body/article). */
+  createCorpus(input: { title?: string }): Promise<Project>;
   list(): Promise<Project[]>;
   /** The rendered article HTML, or undefined if the id is unknown/unsafe. */
   readArtifact(id: string): Promise<string | undefined>;
@@ -194,6 +196,22 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
       // body (editable source) + artifact first, manifest last (the commit marker).
       await atomicWrite(dir, BODY_FILE, `${body.trim()}\n`);
       await atomicWrite(dir, ARTIFACT_FILE, buildArticleHtml(finalTitle, body));
+      await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
+      return manifestToProject(manifest, dir);
+    },
+
+    async createCorpus({ title }) {
+      const id = genId();
+      const dir = projectDir(root, id);
+      await mkdir(dir, { recursive: true });
+      // stage 'corpus' = manifest only, no body/article yet (W1 evidence-grounded direction).
+      const manifest: ProjectManifest = buildManifest({
+        id,
+        title: (title ?? '').trim() || '未命名资料区',
+        topic: '',
+        createdAt: now().toISOString(),
+        stage: 'corpus',
+      });
       await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
       return manifestToProject(manifest, dir);
     },

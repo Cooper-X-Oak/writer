@@ -12,6 +12,10 @@ export const ARTIFACT_FILE = 'article.html';
 export const BODY_FILE = 'body.md';
 /** Per-project subdirectory holding generated illustration files. */
 export const IMAGES_DIR = 'images';
+/** Per-project material corpus (资料区) — the dropped/collected material cards. */
+export const MATERIALS_FILE = 'materials.json';
+/** Per-project subdirectory holding material-card image bytes (sha256-named). */
+export const MATERIALS_IMAGES_DIR = 'materials-images';
 /** Collected hotspots snapshot — a single file at the data-dir root (sibling of projects/). */
 export const HOTSPOTS_FILE = 'hotspots.json';
 /** Persisted user RSS feed list — a sidecar at the data-dir root. */
@@ -61,6 +65,16 @@ export function bodyPath(dir: string): string {
 
 export function imagesDir(dir: string): string {
   return join(dir, IMAGES_DIR);
+}
+
+/** Path to a project's material-corpus sidecar (projectDir/materials.json). */
+export function materialsPath(dir: string): string {
+  return join(dir, MATERIALS_FILE);
+}
+
+/** Path to a project's material-image subdirectory (projectDir/materials-images/). */
+export function materialsImagesDir(dir: string): string {
+  return join(dir, MATERIALS_IMAGES_DIR);
 }
 
 /** An image filename only ever names one path segment under images/. Reject traversal/separators. */

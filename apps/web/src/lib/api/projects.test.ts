@@ -4,7 +4,7 @@ import type { Project } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
 
-const PROJECT: Project = { id: 'p1', dir: '/p/p1', title: '标题', createdAt: '2026-06-22T00:00:00.000Z' };
+const PROJECT: Project = { id: 'p1', dir: '/p/p1', title: '标题', createdAt: '2026-06-22T00:00:00.000Z', stage: 'draft' };
 
 describe('listProjects', () => {
   it('returns the projects array from the envelope', async () => {
