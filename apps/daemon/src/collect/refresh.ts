@@ -67,11 +67,12 @@ export function createRefresh(deps: RefreshDeps): () => Promise<HotspotSnapshot>
   };
 }
 
-/** Production refresh: real config (env-driven feeds) + real fetch + real store + real clock. NOT
- *  exercised by offline tests (it hits the network); createRefresh carries the tested logic. */
-export function defaultRefresh(): Promise<HotspotSnapshot> {
+/** Production refresh: real config (env + feeds.json) + real fetch + real store + real clock. NOT
+ *  exercised by offline tests (it hits the network); createRefresh carries the tested logic. The
+ *  config is rebuilt per run, so feed/channel edits take effect on the next refresh. */
+export async function defaultRefresh(): Promise<HotspotSnapshot> {
   return createRefresh({
-    config: defaultCollectConfig(),
+    config: await defaultCollectConfig(),
     store: defaultHotspotStore,
     fetchImpl: realFetch(),
     now: () => Date.now(),

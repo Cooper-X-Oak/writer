@@ -9,9 +9,11 @@ interface HotspotSidebarProps {
   refreshing: boolean;
   onSelect: (hotspot: Hotspot) => void;
   onRefresh: () => void;
+  /** Rendered at the bottom of the rail (e.g. the RSS feed manager). */
+  children?: React.ReactNode;
 }
 
-export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh }: HotspotSidebarProps) {
+export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh, children }: HotspotSidebarProps) {
   // Single now per render keeps the relative-time labels stable within a paint.
   const now = useMemo(() => Date.now(), [hotspots]);
   return (
@@ -46,6 +48,7 @@ export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh }: Ho
           ))}
         </ul>
       )}
+      {children}
     </aside>
   );
 }

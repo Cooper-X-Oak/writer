@@ -32,3 +32,8 @@ export interface HotspotSnapshot {
   collectedAt: string;
   hotspots: Hotspot[];
 }
+
+/** The GET/POST/DELETE /api/feeds envelope — the persisted, normalized user RSS feed URLs. */
+export interface FeedsResponse {
+  feeds: string[];
+}
