@@ -82,7 +82,9 @@ function isBlockedIPv6(host: string): boolean {
  *  Classifies by node:net IP kind + numeric range, so non-dotted-decimal and embedded-IPv4 IPv6
  *  encodings cannot slip past as "not an IP". A plain DNS name (isIP === 0) is allowed. */
 export function isBlockedHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  // strip trailing FQDN dot(s): 'localhost.' / 'api.localhost.' resolve to localhost but would
+  // otherwise dodge the name checks below (Node keeps the dot for non-numeric hostnames).
+  const host = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase().replace(/\.+$/, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   const kind = isIP(host);
   if (kind === 6) return isBlockedIPv6(host);

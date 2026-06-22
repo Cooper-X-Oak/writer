@@ -66,6 +66,12 @@ describe('isBlockedHost', () => {
       expect(isBlockedHost(h)).toBe(false);
     }
   });
+  it('blocks trailing-dot FQDN forms of localhost (the absolute-root-dot bypass)', () => {
+    for (const h of ['localhost.', 'api.localhost.', 'LOCALHOST.', 'localhost..']) {
+      expect(isBlockedHost(h)).toBe(true);
+    }
+    expect(isBlockedHost('example.com.')).toBe(false); // a real external FQDN with a root dot stays allowed
+  });
 });
 
 describe('isFetchableUrl', () => {
@@ -81,6 +87,7 @@ describe('isFetchableUrl', () => {
     expect(isFetchableUrl('http://169.254.169.254/latest/meta-data/')).toBe(false);
     expect(isFetchableUrl('http://[::ffff:127.0.0.1]/')).toBe(false); // dual-stack loopback bypass
     expect(isFetchableUrl('http://[::ffff:169.254.169.254]/')).toBe(false); // mapped metadata
+    expect(isFetchableUrl('http://localhost./api/health')).toBe(false); // trailing-dot FQDN bypass
     expect(isFetchableUrl('not a url')).toBe(false);
   });
 });
