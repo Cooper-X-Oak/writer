@@ -92,6 +92,28 @@ describe('POST /api/agent/write', () => {
     }
   });
 
+  it('threads a valid source to the engine; a malformed source is ignored (no 400)', async () => {
+    const seen: (unknown)[] = [];
+    const engine: WriteEngine = (_topic, cb, source) => {
+      seen.push(source);
+      cb.onDone();
+      return { abort() {} };
+    };
+    const { url, close } = await serve(engine);
+    try {
+      const validSource = { hotspotId: 'hn-1', sourceType: 'hn', url: 'https://x.com/a', collectedAt: '2026-06-22T00:00:00.000Z' };
+      await readSse(url, { topic: 't', source: validSource });
+      expect(seen[0]).toEqual(validSource);
+
+      // malformed (non-http url) → engine receives undefined, still 200/streams (no 400)
+      const events = await readSse(url, { topic: 't', source: { ...validSource, url: 'javascript:1' } });
+      expect(seen[1]).toBeUndefined();
+      expect(events).toEqual([{ type: 'done' }]);
+    } finally {
+      close();
+    }
+  });
+
   it('forwards an error event', async () => {
     const engine: WriteEngine = (_topic, cb) => {
       cb.onError('Claude Code is not installed');

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProjectStore } from './store.js';
@@ -71,6 +71,19 @@ describe('ProjectStore', () => {
     expect(await store.readArtifact('nope')).toBeUndefined();
     expect(await store.readArtifact('../../etc/passwd')).toBeUndefined();
     expect(await store.readArtifact('..')).toBeUndefined();
+  });
+
+  it('create() persists a hotspot source into the manifest; absent when not provided', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    const source = { hotspotId: 'hn-abc', sourceType: 'hn' as const, url: 'https://x.com/a', collectedAt: '2026-06-22T00:00:00.000Z' };
+    await store.create({ topic: 't', body: 'x', source });
+    const raw = await readFile(join(root, 'p1', MANIFEST_FILE), 'utf8');
+    expect(JSON.parse(raw).source).toEqual(source);
+
+    const seq = createProjectStore({ root, genId: () => 'p2' });
+    await seq.create({ topic: 't2', body: 'y' });
+    const raw2 = await readFile(join(root, 'p2', MANIFEST_FILE), 'utf8');
+    expect('source' in JSON.parse(raw2)).toBe(false);
   });
 
   it('readBody() returns the editable plain-text source', async () => {

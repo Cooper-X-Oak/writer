@@ -5,7 +5,7 @@
 import { mkdir, writeFile, rename, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
-import type { Project } from '@app/contracts';
+import type { Project, WriteSource } from '@app/contracts';
 import {
   projectsRoot,
   projectDir,
@@ -52,6 +52,8 @@ export interface CreateProjectInput {
   title?: string;
   /** Plain-text draft body; rendered to article.html. */
   body: string;
+  /** Provenance when the topic was seeded from a hotspot; recorded in the manifest. */
+  source?: WriteSource;
 }
 
 export interface ProjectStore {
@@ -132,7 +134,7 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
   }
 
   return {
-    async create({ topic, title, body }) {
+    async create({ topic, title, body, source }) {
       const id = genId();
       const dir = projectDir(root, id);
       await mkdir(dir, { recursive: true });
@@ -143,6 +145,7 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
         title: finalTitle,
         topic,
         createdAt: now().toISOString(),
+        source,
       });
 
       // body (editable source) + artifact first, manifest last (the commit marker).

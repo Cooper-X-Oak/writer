@@ -9,6 +9,7 @@ import { agentRouter } from './api/agent.js';
 import { writeRouter } from './api/write.js';
 import { rewriteRouter } from './api/rewrite.js';
 import { projectsRouter } from './api/projects.js';
+import { hotspotsRouter } from './api/hotspots.js';
 
 // Local-first: the daemon is loopback-only, but the Electron renderer / Next dev server is a
 // *different* origin (e.g. http://localhost:3000) calling http://127.0.0.1:4319 — cross-origin.
@@ -35,5 +36,6 @@ export function createServer(): Express {
   app.use('/api', writeRouter);
   app.use('/api', rewriteRouter);
   app.use('/api', projectsRouter);
+  app.use('/api', hotspotsRouter);
   return app;
 }

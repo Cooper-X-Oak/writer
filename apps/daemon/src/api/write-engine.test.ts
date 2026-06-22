@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { spawn as nodeSpawn } from 'node:child_process';
 import type { DetectResult } from '@app/agent-defs';
+import type { WriteSource } from '@app/contracts';
 import { createDefaultEngine } from './write.js';
 
 // A minimal fake ChildProcess the runner can drive: EventEmitter for the process, plus stdout/stderr
@@ -38,14 +39,16 @@ interface Captured {
   deltas: string[];
   done: { called: boolean; cost?: number; projectId?: string };
   error?: string;
-  persisted: { topic: string; body: string }[];
+  persisted: { topic: string; body: string; source?: WriteSource }[];
   spawnArgs: string[];
   spCleaned: boolean;
 }
 
 interface RunOpts {
   /** Override the injected persist; default records the call and returns a fixed id. */
-  persist?: (input: { topic: string; body: string }) => Promise<{ id: string }>;
+  persist?: (input: { topic: string; body: string; source?: WriteSource }) => Promise<{ id: string }>;
+  /** Provenance to thread into the engine (defaults to none). */
+  source?: WriteSource;
 }
 
 // Run the engine against a fake spawn; `script` drives the captured child once it's spawned.
@@ -66,7 +69,7 @@ async function run(
   // Default persist never touches the filesystem — it records and returns a fixed id.
   const persist =
     opts.persist ??
-    ((input: { topic: string; body: string }) => {
+    ((input: { topic: string; body: string; source?: WriteSource }) => {
       cap.persisted.push(input);
       return Promise.resolve({ id: 'saved-id' });
     });
@@ -82,18 +85,22 @@ async function run(
   });
 
   await new Promise<void>((resolve) => {
-    engine('热点主题', {
-      onStatus: (m) => cap.status.push(m),
-      onDelta: (t) => cap.deltas.push(t),
-      onDone: (cost, projectId) => {
-        cap.done = { called: true, cost, projectId };
-        resolve();
+    engine(
+      '热点主题',
+      {
+        onStatus: (m) => cap.status.push(m),
+        onDelta: (t) => cap.deltas.push(t),
+        onDone: (cost, projectId) => {
+          cap.done = { called: true, cost, projectId };
+          resolve();
+        },
+        onError: (m) => {
+          cap.error = m;
+          resolve();
+        },
       },
-      onError: (m) => {
-        cap.error = m;
-        resolve();
-      },
-    });
+      opts.source,
+    );
     // let the async detect resolve + the child spawn, then drive it
     setTimeout(() => {
       if (child) script(child);
@@ -131,6 +138,25 @@ describe('createDefaultEngine — terminal status mapping', () => {
     });
     expect(cap.spawnArgs.join(' ')).toContain('--append-system-prompt-file /fake/sp.md');
     expect(cap.spCleaned).toBe(true);
+  });
+
+  it('threads a hotspot source into the persisted draft', async () => {
+    const source: WriteSource = {
+      hotspotId: 'hn-abc',
+      sourceType: 'hn',
+      url: 'https://news.ycombinator.com/item?id=1',
+      collectedAt: '2026-06-22T00:00:00.000Z',
+    };
+    const cap = await run(
+      READY,
+      (child) => {
+        child.stdout.emit('data', textDelta('正文'));
+        child.stdout.emit('data', resultLine(false, 0.02));
+        child.emit('close', 0, null);
+      },
+      { source },
+    );
+    expect(cap.persisted).toEqual([{ topic: '热点主题', body: '正文', source }]);
   });
 
   it('does not persist (or report a projectId) when the draft is empty', async () => {
