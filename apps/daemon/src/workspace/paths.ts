@@ -14,6 +14,8 @@ export const BODY_FILE = 'body.md';
 export const IMAGES_DIR = 'images';
 /** Collected hotspots snapshot — a single file at the data-dir root (sibling of projects/). */
 export const HOTSPOTS_FILE = 'hotspots.json';
+/** Persisted user RSS feed list — a sidecar at the data-dir root. */
+export const FEEDS_FILE = 'feeds.json';
 
 /** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
 export function dataDir(): string {
@@ -27,6 +29,11 @@ export function projectsRoot(base: string = dataDir()): string {
 /** Path to the collected-hotspots snapshot file (dataDir()/hotspots.json). */
 export function hotspotsPath(base: string = dataDir()): string {
   return join(base, HOTSPOTS_FILE);
+}
+
+/** Path to the persisted user feed list (dataDir()/feeds.json). */
+export function feedsPath(base: string = dataDir()): string {
+  return join(base, FEEDS_FILE);
 }
 
 export function projectDir(root: string, id: string): string {

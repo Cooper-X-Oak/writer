@@ -14,11 +14,13 @@ import {
   fetchExportHtml,
 } from '../lib/api/projects';
 import { listHotspots, refreshHotspots } from '../lib/api/hotspots';
+import { listFeeds, addFeed, removeFeed } from '../lib/api/feeds';
 import { rewrite } from '../lib/api/rewrite';
 import { projectImageBase } from '../lib/api/base';
 import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
 import { HotspotSidebar } from './hotspot-sidebar';
+import { FeedManager } from './feed-manager';
 import { ArticleView } from './article-view';
 import { BlockToolbar } from './block-toolbar';
 import { RewritePanel } from './rewrite-panel';
@@ -54,6 +56,8 @@ export function WriteStudio() {
   const [hasBridge, setHasBridge] = useState(false);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [feeds, setFeeds] = useState<string[]>([]);
+  const [feedsBusy, setFeedsBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const running = phase === 'running';
@@ -79,10 +83,19 @@ export function WriteStudio() {
     }
   }, []);
 
+  const loadFeeds = useCallback(async (): Promise<void> => {
+    try {
+      setFeeds(await listFeeds());
+    } catch {
+      // best-effort
+    }
+  }, []);
+
   useEffect(() => {
     void refreshProjects();
     void loadHotspots();
-  }, [refreshProjects, loadHotspots]);
+    void loadFeeds();
+  }, [refreshProjects, loadHotspots, loadFeeds]);
 
   const doRefreshHotspots = async (): Promise<void> => {
     if (refreshing) return;
@@ -93,6 +106,30 @@ export function WriteStudio() {
       // best-effort; keep the existing list on failure
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const onAddFeed = async (url: string): Promise<void> => {
+    if (feedsBusy) return;
+    setFeedsBusy(true);
+    try {
+      setFeeds(await addFeed(url));
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFeedsBusy(false);
+    }
+  };
+
+  const onRemoveFeed = async (url: string): Promise<void> => {
+    if (feedsBusy) return;
+    setFeedsBusy(true);
+    try {
+      setFeeds(await removeFeed(url));
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFeedsBusy(false);
     }
   };
 
@@ -461,7 +498,14 @@ export function WriteStudio() {
           refreshing={refreshing}
           onSelect={onPickHotspot}
           onRefresh={() => void doRefreshHotspots()}
-        />
+        >
+          <FeedManager
+            feeds={feeds}
+            busy={feedsBusy}
+            onAdd={(url) => void onAddFeed(url)}
+            onRemove={(url) => void onRemoveFeed(url)}
+          />
+        </HotspotSidebar>
       )}
     </section>
   );
