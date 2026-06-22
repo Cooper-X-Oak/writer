@@ -102,7 +102,10 @@ export function WriteStudio() {
             else if (ev.type === 'done') {
               setPhase('done');
               setStatus(ev.costUsd != null ? `完成 · 已保存 · $${ev.costUsd.toFixed(4)}` : '完成 · 已保存');
-              void refreshProjects();
+              // Land in the rich project view (preview / edit / 配图 / 导出) instead of leaving the
+              // user on the plain-text draft — the chain flows straight into editing.
+              if (ev.projectId) void openProjectById(ev.projectId);
+              else void refreshProjects();
             } else if (ev.type === 'error') {
               setPhase('error');
               setStatus(ev.message);
@@ -148,6 +151,18 @@ export function WriteStudio() {
     } catch (err: unknown) {
       setSelectedHtml(null);
       setStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Refresh the sidebar and open the just-written project by id (used right after a write finishes).
+  const openProjectById = async (id: string): Promise<void> => {
+    try {
+      const list = await listProjects();
+      setProjects(list);
+      const project = list.find((p) => p.id === id);
+      if (project) await openProject(project);
+    } catch {
+      void refreshProjects();
     }
   };
 
