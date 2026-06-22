@@ -60,6 +60,12 @@ export async function moveBlock(id: string, blockId: string, direction: 'up' | '
   return postBlockOp(id, '/move', { blockId, direction });
 }
 
+/** Delete a project (its directory). Resolves on 204; throws otherwise. */
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`delete project failed: ${res.status}`);
+}
+
 /** Rename the project; returns the re-rendered HTML + the new title. */
 export async function renameTitle(id: string, title: string): Promise<{ html: string; title: string }> {
   const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/title`, {

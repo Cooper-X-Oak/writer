@@ -34,6 +34,7 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
     deleteBlock: over.deleteBlock ?? (() => Promise.resolve({ html: '<h1>deleted</h1>' })),
     moveBlock: over.moveBlock ?? (() => Promise.resolve({ html: '<h1>moved</h1>' })),
     renameTitle: over.renameTitle ?? (() => Promise.resolve({ html: '<h1>新</h1>', title: '新' })),
+    deleteProject: over.deleteProject ?? (() => Promise.resolve({ id: 'p1' })),
   };
 }
 
@@ -163,6 +164,29 @@ describe('POST /api/projects/:id/block', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('DELETE /api/projects/:id', () => {
+  it('returns 204 on success (store called with the id)', async () => {
+    let captured = '';
+    const store = fakeStore({ deleteProject: (id) => { captured = id; return Promise.resolve({ id }); } });
+    const { url, close } = await serve(store);
+    try {
+      const res = await fetch(`${url}/projects/p1`, { method: 'DELETE' });
+      expect(res.status).toBe(204);
+      expect(captured).toBe('p1');
+    } finally { close(); }
+  });
+  it('returns 404 for an unknown/unsafe id and 500 on throw', async () => {
+    const miss = await serve(fakeStore({ deleteProject: () => Promise.resolve(undefined) }));
+    try {
+      expect((await fetch(`${miss.url}/projects/nope`, { method: 'DELETE' })).status).toBe(404);
+    } finally { miss.close(); }
+    const boom = await serve(fakeStore({ deleteProject: () => Promise.reject(new Error('rm fail')) }));
+    try {
+      expect((await fetch(`${boom.url}/projects/p1`, { method: 'DELETE' })).status).toBe(500);
+    } finally { boom.close(); }
   });
 });
 

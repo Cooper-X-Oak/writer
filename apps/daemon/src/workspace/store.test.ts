@@ -231,6 +231,24 @@ describe('ProjectStore', () => {
     expect(manifest.source).toEqual(source); // provenance preserved
   });
 
+  it('deleteProject() removes the dir, is idempotent, and refuses unsafe ids (no traversal)', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'x' });
+    expect((await readdir(root)).includes('p1')).toBe(true);
+
+    expect(await store.deleteProject('p1')).toEqual({ id: 'p1' });
+    expect((await readdir(root)).includes('p1')).toBe(false);
+    expect(await store.deleteProject('p1')).toEqual({ id: 'p1' }); // idempotent (force:true → no-op)
+
+    // unsafe ids rejected BEFORE any rm; the tmp root is untouched
+    const sentinel = join(root, 'keep');
+    await mkdir(sentinel, { recursive: true });
+    expect(await store.deleteProject('../keep')).toBeUndefined();
+    expect(await store.deleteProject('a/b')).toBeUndefined();
+    expect(await store.deleteProject('..')).toBeUndefined();
+    expect((await readdir(root)).includes('keep')).toBe(true); // traversal did not delete it
+  });
+
   it('structural ops + rename return undefined for unknown/unsafe id, bad blockId, or blank title', async () => {
     const store = createProjectStore({ root, genId: () => 'p1' });
     await store.create({ topic: 't', body: 'a\n\nb' });

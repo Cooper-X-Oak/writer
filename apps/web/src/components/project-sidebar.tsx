@@ -7,6 +7,7 @@ interface ProjectSidebarProps {
   selectedId: string | null;
   onSelect: (project: Project) => void;
   onNew: () => void;
+  onDelete: (project: Project) => void;
 }
 
 function formatDate(iso: string): string {
@@ -14,7 +15,7 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
 }
 
-export function ProjectSidebar({ projects, selectedId, onSelect, onNew }: ProjectSidebarProps) {
+export function ProjectSidebar({ projects, selectedId, onSelect, onNew, onDelete }: ProjectSidebarProps) {
   return (
     <aside style={styles.aside}>
       <button style={styles.newBtn} onClick={onNew}>
@@ -28,7 +29,7 @@ export function ProjectSidebar({ projects, selectedId, onSelect, onNew }: Projec
           {projects.map((p) => {
             const active = p.id === selectedId;
             return (
-              <li key={p.id}>
+              <li key={p.id} style={styles.row}>
                 <button
                   style={{ ...styles.item, ...(active ? styles.itemActive : null) }}
                   aria-current={active ? 'true' : undefined}
@@ -36,6 +37,17 @@ export function ProjectSidebar({ projects, selectedId, onSelect, onNew }: Projec
                 >
                   <span style={styles.title}>{p.title}</span>
                   <time style={styles.time}>{formatDate(p.createdAt)}</time>
+                </button>
+                <button
+                  style={styles.del}
+                  aria-label={`删除 ${p.title}`}
+                  title="删除"
+                  onClick={(e) => {
+                    e.stopPropagation(); // don't also open the project
+                    onDelete(p);
+                  }}
+                >
+                  ✕
                 </button>
               </li>
             );
@@ -62,11 +74,23 @@ const styles: Record<string, React.CSSProperties> = {
   heading: { margin: '18px 0 8px', fontSize: 12, letterSpacing: 1, color: '#999', textTransform: 'uppercase' },
   empty: { fontSize: 13, color: '#999', lineHeight: 1.6 },
   list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  row: { display: 'flex', alignItems: 'center', gap: 2 },
+  del: {
+    flexShrink: 0,
+    border: 'none',
+    background: 'transparent',
+    color: '#ccc',
+    cursor: 'pointer',
+    fontSize: 12,
+    padding: '0 6px',
+    lineHeight: 1,
+  },
   item: {
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     padding: '8px 10px',
     textAlign: 'left',
     background: 'transparent',

@@ -144,6 +144,22 @@ export function createProjectsRouter(store: ProjectStore = createProjectStore())
     },
   );
 
+  // Delete a project (removes its directory). State-changing → loopback-CORS CSRF guard; no GET
+  // trigger. 204 on success, 404 for an unknown/unsafe id.
+  router.delete('/projects/:id', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    store
+      .deleteProject(id)
+      .then((result) => {
+        if (!result) {
+          res.status(404).json({ error: 'project not found' });
+          return;
+        }
+        res.status(204).end();
+      })
+      .catch(() => res.status(500).json({ error: 'failed to delete project' }));
+  });
+
   // Export a fully self-contained article (images inlined as data URIs) as a downloadable file.
   router.get('/projects/:id/export/html', (req: Request, res: Response) => {
     const id = typeof req.params.id === 'string' ? req.params.id : '';

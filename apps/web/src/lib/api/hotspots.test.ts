@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listHotspots, refreshHotspots } from './hotspots';
+import { listHotspots, refreshHotspots, dismissHotspot, restoreHotspot } from './hotspots';
 import type { Hotspot } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -37,5 +37,26 @@ describe('refreshHotspots', () => {
   it('throws when not ok', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as unknown as Response));
     await expect(refreshHotspots()).rejects.toThrow(/refresh hotspots failed: 500/);
+  });
+});
+
+describe('dismissHotspot / restoreHotspot', () => {
+  it('POST /dismiss and DELETE /dismiss with the id encoded', async () => {
+    const post = vi.fn().mockResolvedValue({ ok: true, status: 204 } as unknown as Response);
+    vi.stubGlobal('fetch', post);
+    await dismissHotspot('hn-abc');
+    let [u, init] = post.mock.calls[0] as [string, RequestInit];
+    expect(String(u)).toContain('/hotspots/hn-abc/dismiss');
+    expect(init.method).toBe('POST');
+
+    const del = vi.fn().mockResolvedValue({ ok: true, status: 204 } as unknown as Response);
+    vi.stubGlobal('fetch', del);
+    await restoreHotspot('hn-abc');
+    [u, init] = del.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('DELETE');
+  });
+  it('throw on non-ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as unknown as Response));
+    await expect(dismissHotspot('x')).rejects.toThrow(/dismiss hotspot failed: 500/);
   });
 });

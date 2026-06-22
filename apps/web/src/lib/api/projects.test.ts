@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listProjects, getArtifact, patchBlock, exportHtmlUrl, fetchExportHtml, insertBlockAfter, deleteBlock, moveBlock, renameTitle } from './projects';
+import { listProjects, getArtifact, patchBlock, exportHtmlUrl, fetchExportHtml, insertBlockAfter, deleteBlock, moveBlock, renameTitle, deleteProject } from './projects';
 import type { Project } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -118,5 +118,20 @@ describe('structural block ops', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as unknown as Response));
     await expect(insertBlockAfter('p1', 'b0')).rejects.toThrow(/block \/insert failed: 500/);
     await expect(renameTitle('p1', 'x')).rejects.toThrow(/rename failed: 500/);
+  });
+});
+
+describe('deleteProject', () => {
+  it('DELETEs the project and resolves on 204', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteProject('a/b')).resolves.toBeUndefined();
+    const [u, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(u)).toContain('/projects/a%2Fb');
+    expect(init.method).toBe('DELETE');
+  });
+  it('throws on non-ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response));
+    await expect(deleteProject('p1')).rejects.toThrow(/delete project failed: 404/);
   });
 });
