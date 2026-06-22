@@ -20,7 +20,8 @@ export default defineConfig({
       include: ['apps/**/src/**/*.ts', 'packages/**/src/**/*.ts'],
       exclude: ['**/*.test.ts'],
       // High-risk modules carry an enforced floor (PLAN.md §6). The stream parser is the
-      // foundation of the agent layer — keep it ≥90%.
+      // foundation of the agent layer; the collect scorer + feed parsers handle untrusted external
+      // input and are the value-bearing core of P7 — keep them ≥90%.
       thresholds: {
         'apps/daemon/src/agent/stream/claude-jsonl.ts': {
           statements: 90,
@@ -28,6 +29,10 @@ export default defineConfig({
           functions: 90,
           lines: 90,
         },
+        'apps/daemon/src/collect/score.ts': { statements: 90, branches: 90, functions: 90, lines: 90 },
+        'apps/daemon/src/collect/sources/hn.ts': { statements: 90, branches: 90, functions: 90, lines: 90 },
+        'apps/daemon/src/collect/sources/rss.ts': { statements: 90, branches: 85, functions: 90, lines: 90 },
+        'apps/daemon/src/collect/fetch-util.ts': { statements: 90, branches: 85, functions: 90, lines: 90 },
       },
     },
   },
