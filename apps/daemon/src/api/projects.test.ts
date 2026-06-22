@@ -29,6 +29,7 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
     patchBlock: over.patchBlock ?? (() => Promise.resolve({ html: '<h1>patched</h1>' })),
     addImage: over.addImage ?? (() => Promise.resolve({ html: '<figure></figure>', name: 'img.png' })),
     readImage: over.readImage ?? (() => Promise.resolve({ bytes: Buffer.from([1, 2, 3]), contentType: 'image/png' })),
+    exportHtml: over.exportHtml ?? (() => Promise.resolve('<!doctype html><h1>export</h1>')),
   };
 }
 
@@ -73,6 +74,40 @@ describe('GET /api/projects/:id/artifact', () => {
     try {
       const res = await fetch(`${url}/projects/nope/artifact`);
       expect(res.status).toBe(404);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe('GET /api/projects/:id/export/html', () => {
+  it('returns the self-contained HTML as a download attachment', async () => {
+    const { url, close } = await serve(fakeStore());
+    try {
+      const res = await fetch(`${url}/projects/p1/export/html`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('content-disposition')).toContain('attachment');
+      expect(res.headers.get('content-disposition')).toContain('article-p1.html');
+      expect(await res.text()).toBe('<!doctype html><h1>export</h1>');
+    } finally {
+      close();
+    }
+  });
+
+  it('returns 404 for an unknown/unsafe id', async () => {
+    const { url, close } = await serve(fakeStore({ exportHtml: () => Promise.resolve(undefined) }));
+    try {
+      expect((await fetch(`${url}/projects/nope/export/html`)).status).toBe(404);
+    } finally {
+      close();
+    }
+  });
+
+  it('returns 500 when the store throws', async () => {
+    const { url, close } = await serve(fakeStore({ exportHtml: () => Promise.reject(new Error('boom')) }));
+    try {
+      expect((await fetch(`${url}/projects/p1/export/html`)).status).toBe(500);
     } finally {
       close();
     }

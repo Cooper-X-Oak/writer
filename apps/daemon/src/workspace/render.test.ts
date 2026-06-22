@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, buildArticleHtml, splitBlocks, blockIdToIndex, patchBody, imageBlockMarkdown } from './render.js';
+import {
+  escapeHtml,
+  buildArticleHtml,
+  buildSelfContainedHtml,
+  collectImageSrcs,
+  EXPORT_CSS,
+  splitBlocks,
+  blockIdToIndex,
+  patchBody,
+  imageBlockMarkdown,
+} from './render.js';
 
 describe('escapeHtml', () => {
   it('escapes the five HTML-significant characters', () => {
@@ -69,6 +79,36 @@ describe('buildArticleHtml', () => {
     const html = buildArticleHtml('t', '![a"><script>x</script>](images/x.png)');
     expect(html).not.toContain('<script>x</script>');
     expect(html).toContain('&quot;');
+  });
+});
+
+describe('collectImageSrcs', () => {
+  it('returns image-block srcs in body order, ignoring paragraphs', () => {
+    const body = 'intro\n\n![a](images/a.png)\n\nmid\n\n![b](images/b.jpg)';
+    expect(collectImageSrcs(body)).toEqual(['images/a.png', 'images/b.jpg']);
+  });
+  it('returns [] when there are no image blocks', () => {
+    expect(collectImageSrcs('just text\n\nmore text')).toEqual([]);
+  });
+});
+
+describe('buildSelfContainedHtml', () => {
+  it('inlines image srcs via the resolver and embeds the export CSS', () => {
+    const body = 'para\n\n![cap](images/a.png)';
+    const html = buildSelfContainedHtml('标题', body, (src) =>
+      src === 'images/a.png' ? 'data:image/png;base64,AAAA' : src,
+    );
+    expect(html).toContain('<style>');
+    expect(html).toContain(EXPORT_CSS);
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(html).not.toContain('src="images/a.png"');
+    expect(html).toContain('<h1>标题</h1>');
+  });
+
+  it('leaves a src untouched when the resolver returns it unchanged, and still escapes', () => {
+    const html = buildSelfContainedHtml('t', '![<x>](images/a.png)', (src) => src);
+    expect(html).toContain('src="images/a.png"');
+    expect(html).toContain('alt="&lt;x&gt;"');
   });
 });
 

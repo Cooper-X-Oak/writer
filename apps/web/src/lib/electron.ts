@@ -5,6 +5,7 @@ export interface HswBridge {
   saveImageConfig: (cfg: { baseURL: string; model: string; apiKey: string }) => Promise<void>;
   imageConfigStatus: () => Promise<{ configured: boolean; baseURL?: string; model?: string }>;
   generateImage: (req: { projectId: string; prompt: string }) => Promise<{ html: string; name: string }>;
+  exportPdf: (req: { projectId: string; title: string }) => Promise<{ saved: boolean; path?: string }>;
 }
 
 declare global {

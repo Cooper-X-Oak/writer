@@ -136,4 +136,33 @@ describe('ProjectStore', () => {
     expect(await store.readImage('p1', '../../secret')).toBeUndefined();
     expect(await store.readImage('p1', 'a.exe')).toBeUndefined(); // unsupported ext
   });
+
+  it('exportHtml() inlines images as data URIs and embeds CSS (self-contained, no daemon refs)', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: '正文一段' });
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9, 8, 7]);
+    const added = await store.addImage('p1', { bytes, contentType: 'image/png', alt: '配图' });
+    const name = added?.name ?? '';
+
+    const html = await store.exportHtml('p1');
+    expect(html).toContain('<style>'); // readable styling embedded
+    expect(html).toContain(`data:image/png;base64,${bytes.toString('base64')}`);
+    expect(html).not.toContain(`images/${name}`); // no relative src left → opens offline
+    expect(html).toContain('<h1>t</h1>');
+    expect(html).toContain('正文一段');
+  });
+
+  it('exportHtml() works for an article with no images', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'only words here' });
+    const html = await store.exportHtml('p1');
+    expect(html).toContain('only words here');
+    expect(html).not.toContain('<img');
+  });
+
+  it('exportHtml() returns undefined for unknown/unsafe ids', async () => {
+    const store = createProjectStore({ root });
+    expect(await store.exportHtml('nope')).toBeUndefined();
+    expect(await store.exportHtml('../../etc/passwd')).toBeUndefined();
+  });
 });

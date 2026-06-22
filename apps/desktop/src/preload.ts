@@ -15,12 +15,19 @@ export interface GenerateImageRequest {
   prompt: string;
 }
 
+export interface ExportPdfRequest {
+  projectId: string;
+  title: string;
+}
+
 const api = {
   saveImageConfig: (cfg: ImageConfigInput): Promise<void> => ipcRenderer.invoke('hsw:saveImageConfig', cfg),
   imageConfigStatus: (): Promise<{ configured: boolean; baseURL?: string; model?: string }> =>
     ipcRenderer.invoke('hsw:imageConfigStatus'),
   generateImage: (req: GenerateImageRequest): Promise<{ html: string; name: string }> =>
     ipcRenderer.invoke('hsw:generateImage', req),
+  exportPdf: (req: ExportPdfRequest): Promise<{ saved: boolean; path?: string }> =>
+    ipcRenderer.invoke('hsw:exportPdf', req),
 };
 
 contextBridge.exposeInMainWorld('hsw', api);

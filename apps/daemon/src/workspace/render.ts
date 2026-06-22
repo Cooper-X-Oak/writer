@@ -51,28 +51,55 @@ export function imageBlockMarkdown(src: string, alt: string): string {
   return `![${safeAlt}](${safeSrc})`;
 }
 
-function renderBlock(block: string, i: number): string {
+/** Collect every image-block src in body order (e.g. ["images/abc.png"]). Used by the exporter to
+ *  pre-resolve each referenced file to an inline data URI. */
+export function collectImageSrcs(body: string): string[] {
+  const srcs: string[] = [];
+  for (const block of splitBlocks(body)) {
+    const img = IMAGE_BLOCK.exec(block);
+    if (img?.[2]) srcs.push(img[2]);
+  }
+  return srcs;
+}
+
+/** Maps a stored image src ("images/abc.png") to the src actually emitted in the document.
+ *  Identity for the live preview; a data-URI lookup for self-contained export. */
+export type ImageSrcResolver = (src: string) => string;
+
+function renderBlock(block: string, i: number, resolveSrc?: ImageSrcResolver): string {
   const id = `b${String(i)}`;
   const img = IMAGE_BLOCK.exec(block);
   if (img) {
     const alt = escapeHtml(img[1] ?? '');
-    const src = escapeHtml(img[2] ?? '');
+    const rawSrc = img[2] ?? '';
+    const src = escapeHtml(resolveSrc ? resolveSrc(rawSrc) : rawSrc);
     return `<figure data-block="${id}"><img src="${src}" alt="${alt}" loading="lazy"/></figure>`;
   }
   return `<p data-block="${id}">${escapeHtml(block).replace(/\n/g, '<br/>')}</p>`;
 }
 
-/** Wrap a plain-text body into a standalone article document. Each block is a <p data-block="bN">
- *  (or <figure><img> for an image block); single newlines become <br/>. All text is escaped. */
-export function buildArticleHtml(title: string, body: string): string {
-  const paragraphs = splitBlocks(body).map(renderBlock).join('\n');
+interface DocumentOptions {
+  /** Rewrites image srcs (export inlines them as data URIs). Omit for identity. */
+  resolveImageSrc?: ImageSrcResolver;
+  /** Inline CSS injected into <head> (export embeds readable styling; preview stays unstyled). */
+  styleCss?: string;
+}
+
+function buildDocument(title: string, body: string, opts: DocumentOptions = {}): string {
+  const paragraphs = splitBlocks(body)
+    .map((block, i) => renderBlock(block, i, opts.resolveImageSrc))
+    .join('\n');
+  const head = [
+    '<meta charset="utf-8"/>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"/>',
+    `<title>${escapeHtml(title)}</title>`,
+  ];
+  if (opts.styleCss) head.push(`<style>${opts.styleCss}</style>`);
   return [
     '<!doctype html>',
     '<html lang="zh">',
     '<head>',
-    '<meta charset="utf-8"/>',
-    '<meta name="viewport" content="width=device-width, initial-scale=1"/>',
-    `<title>${escapeHtml(title)}</title>`,
+    ...head,
     '</head>',
     '<body>',
     '<article>',
@@ -83,4 +110,34 @@ export function buildArticleHtml(title: string, body: string): string {
     '</html>',
     '',
   ].join('\n');
+}
+
+/** Wrap a plain-text body into a standalone article document. Each block is a <p data-block="bN">
+ *  (or <figure><img> for an image block); single newlines become <br/>. All text is escaped. */
+export function buildArticleHtml(title: string, body: string): string {
+  return buildDocument(title, body);
+}
+
+/** Readable, self-contained styling for exported documents (HTML download / PDF). No external
+ *  fonts or assets so the single file renders identically offline. */
+export const EXPORT_CSS = [
+  'html{-webkit-text-size-adjust:100%}',
+  'body{margin:0;background:#fff;color:#1a1a1a;',
+  'font-family:"Segoe UI",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.85}',
+  'article{max-width:42rem;margin:0 auto;padding:3.5rem 1.5rem 5rem}',
+  'h1{font-size:2rem;line-height:1.25;letter-spacing:-0.01em;margin:0 0 1.75rem}',
+  'p{margin:0 0 1.25rem;font-size:1.0625rem}',
+  'figure{margin:2rem 0}',
+  'img{display:block;max-width:100%;height:auto;border-radius:10px}',
+  '@media print{article{padding:0;max-width:none}}',
+].join('');
+
+/** Render a fully self-contained article: images inlined as data URIs (via `resolveImageSrc`) and
+ *  readable CSS embedded, so the single HTML file opens/prints identically with no daemon. */
+export function buildSelfContainedHtml(
+  title: string,
+  body: string,
+  resolveImageSrc: ImageSrcResolver,
+): string {
+  return buildDocument(title, body, { resolveImageSrc, styleCss: EXPORT_CSS });
 }

@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
-import { listProjects, getArtifact, patchBlock } from '../lib/api/projects';
+import { listProjects, getArtifact, patchBlock, fetchExportHtml } from '../lib/api/projects';
 import { rewrite } from '../lib/api/rewrite';
 import { projectImageBase } from '../lib/api/base';
+import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
 import { ArticleView } from './article-view';
 import { RewritePanel } from './rewrite-panel';
@@ -30,9 +31,16 @@ export function WriteStudio() {
   const [instruction, setInstruction] = useState('');
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | undefined>(undefined);
+  const [exporting, setExporting] = useState(false);
+  const [hasBridge, setHasBridge] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const running = phase === 'running';
+
+  // window.hsw exists only inside the Electron shell; PDF export degrades away in a plain browser.
+  useEffect(() => {
+    setHasBridge(getBridge() != null);
+  }, []);
 
   const refreshProjects = useCallback(async (): Promise<void> => {
     try {
@@ -139,6 +147,43 @@ export function WriteStudio() {
     }
   };
 
+  const exportHtml = async (): Promise<void> => {
+    if (!selected || exporting) return;
+    setExporting(true);
+    setStatus('');
+    try {
+      const blob = await fetchExportHtml(selected.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeFilename(selected.title)}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus('已导出 HTML');
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportPdf = async (): Promise<void> => {
+    const bridge = getBridge();
+    if (!bridge || !selected || exporting) return;
+    setExporting(true);
+    setStatus('');
+    try {
+      const res = await bridge.exportPdf({ projectId: selected.id, title: selected.title });
+      setStatus(res.saved ? `已导出 PDF：${res.path ?? ''}` : 'PDF 导出已取消');
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <section style={styles.layout}>
       <ProjectSidebar
@@ -163,11 +208,28 @@ export function WriteStudio() {
                 >
                   {editMode ? '✓ 编辑中' : '编辑'}
                 </button>
+                <button
+                  style={{ ...styles.btn, ...styles.ghostBtn }}
+                  onClick={() => void exportHtml()}
+                  disabled={exporting}
+                >
+                  导出 HTML
+                </button>
+                {hasBridge && (
+                  <button
+                    style={{ ...styles.btn, ...styles.ghostBtn }}
+                    onClick={() => void exportPdf()}
+                    disabled={exporting}
+                  >
+                    导出 PDF
+                  </button>
+                )}
                 <button style={styles.btn} onClick={newWrite}>
                   ＋ 新写作
                 </button>
               </div>
             </header>
+            {status && <p style={{ ...styles.status, color: '#666' }}>{status}</p>}
             {editMode && !selection && <p style={styles.hint}>点击文章里的任意一段，让 AI 帮你改写。</p>}
             {selectedHtml == null ? (
               <p style={styles.status}>加载中…</p>
@@ -237,6 +299,12 @@ export function WriteStudio() {
       </div>
     </section>
   );
+}
+
+/** Make a project title safe as a download filename (strip path/illegal chars; fall back). */
+function safeFilename(title: string): string {
+  const cleaned = title.replace(/[\\/:*?"<>|]/g, '_').trim();
+  return cleaned || 'article';
 }
 
 const styles: Record<string, React.CSSProperties> = {
