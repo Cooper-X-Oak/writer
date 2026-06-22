@@ -380,6 +380,7 @@ export function WriteStudio() {
             {selection && panelMode === 'menu' && (
               <>
                 <BlockToolbar
+                  key={selection.blockId}
                   busy={busy}
                   onRewrite={() => setPanelMode('rewrite')}
                   onEdit={() => setPanelMode('edit')}
