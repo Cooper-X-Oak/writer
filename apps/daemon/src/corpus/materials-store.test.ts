@@ -1,18 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMaterialsStore, MAX_CARDS, type MaterialsStore } from './materials-store.js';
 import { textCard } from './normalize.js';
-import { materialsPath, projectDir } from '../workspace/paths.js';
+import { materialsPath, manifestPath, projectDir } from '../workspace/paths.js';
 
 let root: string;
 let store: MaterialsStore;
 const fixedNow = () => new Date('2026-06-22T00:00:00.000Z');
 
+/** A material write only attaches to an existing project — seed a manifest for 'p1'. */
+async function seedProject(id: string): Promise<void> {
+  await mkdir(projectDir(root, id), { recursive: true });
+  await writeFile(manifestPath(projectDir(root, id)), `{"id":"${id}"}`, 'utf8');
+}
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'corpus-'));
   store = createMaterialsStore({ root, now: fixedNow });
+  await seedProject('p1');
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
@@ -46,6 +53,13 @@ describe('materials-store round-trip', () => {
     expect(await store.addCard('../escape', card('a'))).toBeUndefined();
     expect(await store.list('../escape')).toEqual([]);
     expect(await store.remove('../escape', 'a')).toBeUndefined();
+  });
+
+  it('refuses to write to a nonexistent project (no phantom dir created)', async () => {
+    expect(await store.addCard('ghost', card('a'))).toBeUndefined();
+    expect(await store.remove('ghost', 'a')).toBeUndefined();
+    expect(await store.addImage('ghost', Buffer.from([1, 2]), 'image/png', '')).toBeUndefined();
+    await expect(readdir(projectDir(root, 'ghost'))).rejects.toThrow(); // dir never created
   });
 });
 

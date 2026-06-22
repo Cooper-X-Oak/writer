@@ -74,6 +74,7 @@ export function WriteStudio() {
   const [cards, setCards] = useState<MaterialCard[]>([]);
   const [corpusBusy, setCorpusBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const corpusCreatingRef = useRef<Promise<string | undefined> | null>(null);
 
   const running = phase === 'running';
 
@@ -168,6 +169,7 @@ export function WriteStudio() {
             else if (ev.type === 'done') {
               setPhase('done');
               setStatus(ev.costUsd != null ? `完成 · 已保存 · $${ev.costUsd.toFixed(4)}` : '完成 · 已保存');
+              setTopic('');
               if (ev.projectId) void openProjectById(ev.projectId); // reopens as a draft → article view
               else void refreshProjects();
             } else if (ev.type === 'error') {
@@ -199,18 +201,26 @@ export function WriteStudio() {
     }
   };
 
-  // Ensure there is an open project to ingest into; create a corpus on the fly if none.
+  // Ensure there is an open project to ingest into; create a corpus on the fly if none. A ref
+  // de-dupes concurrent first-drops (stale `selected` would otherwise create two corpus projects).
   const ensureCorpus = async (): Promise<string | undefined> => {
     if (selected) return selected.id;
-    try {
-      const project = await createCorpusProject();
-      setProjects(await listProjects());
-      await openProject(project);
-      return project.id;
-    } catch (err: unknown) {
-      setStatus(err instanceof Error ? err.message : String(err));
-      return undefined;
-    }
+    if (corpusCreatingRef.current) return corpusCreatingRef.current;
+    const pending = (async (): Promise<string | undefined> => {
+      try {
+        const project = await createCorpusProject();
+        setProjects(await listProjects());
+        await openProject(project);
+        return project.id;
+      } catch (err: unknown) {
+        setStatus(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+    })().finally(() => {
+      corpusCreatingRef.current = null;
+    });
+    corpusCreatingRef.current = pending;
+    return pending;
   };
 
   // Material ingest — add to the open project's corpus, then reconcile the card list.
@@ -315,6 +325,7 @@ export function WriteStudio() {
   const newWrite = (): void => {
     setSelected(null);
     setSelectedHtml(null);
+    setCards([]);
     clearEdit();
     setDraft('');
     setStatus('');

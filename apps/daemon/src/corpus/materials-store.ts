@@ -13,6 +13,7 @@ import {
   projectDir,
   materialsPath,
   materialsImagesDir,
+  manifestPath,
   isSafeProjectId,
   isSafeImageName,
 } from '../workspace/paths.js';
@@ -88,6 +89,17 @@ export function createMaterialsStore(deps: MaterialsStoreDeps = {}): MaterialsSt
     }
   }
 
+  /** A material write only ever attaches to an EXISTING project (manifest present) — never mkdir a
+   *  phantom dir for an arbitrary safe-charset id. */
+  async function projectExists(dir: string): Promise<boolean> {
+    try {
+      await readFile(manifestPath(dir), 'utf8');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function writeCards(dir: string, cards: MaterialCard[]): Promise<void> {
     await atomicWriteText(materialsPath(dir), `${JSON.stringify({ cards }, null, 2)}\n`);
   }
@@ -115,7 +127,9 @@ export function createMaterialsStore(deps: MaterialsStoreDeps = {}): MaterialsSt
 
     async addCard(projectId, card) {
       if (!isSafeProjectId(projectId)) return undefined;
-      return upsert(projectDir(root, projectId), card);
+      const dir = projectDir(root, projectId);
+      if (!(await projectExists(dir))) return undefined;
+      return upsert(dir, card);
     },
 
     async addImage(projectId, bytes, contentType, alt) {
@@ -123,6 +137,7 @@ export function createMaterialsStore(deps: MaterialsStoreDeps = {}): MaterialsSt
       const ext = IMAGE_EXT_BY_TYPE[contentType];
       if (!ext) return undefined; // unsupported / disallowed type (no svg)
       const dir = projectDir(root, projectId);
+      if (!(await projectExists(dir))) return undefined;
       const filename = `${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}.${ext}`;
       await atomicWriteBuffer(join(materialsImagesDir(dir), filename), bytes); // blob FIRST
       const card = imageCard({ filename, contentType, alt }, { now: deps.now, genId: deps.genId });
@@ -145,6 +160,7 @@ export function createMaterialsStore(deps: MaterialsStoreDeps = {}): MaterialsSt
     async remove(projectId, cardId) {
       if (!isSafeProjectId(projectId)) return undefined;
       const dir = projectDir(root, projectId);
+      if (!(await projectExists(dir))) return undefined;
       const cards = await readCards(dir);
       await writeCards(dir, cards.filter((c) => c.id !== cardId)); // idempotent (force-style)
       return { id: cardId };

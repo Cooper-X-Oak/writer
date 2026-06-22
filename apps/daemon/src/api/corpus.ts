@@ -16,6 +16,7 @@ import { defaultMaterialsStore, type MaterialsStore } from '../corpus/materials-
 import { createProjectStore, type ProjectStore } from '../workspace/store.js';
 import { defaultHotspotStore, type HotspotStore } from '../collect/store.js';
 import { linkCard, textCard, mdCard, codeCard, hotspotToCard } from '../corpus/normalize.js';
+import { isFetchableUrl } from '../collect/fetch-util.js';
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
@@ -123,6 +124,10 @@ export function createCorpusRouter(deps: CorpusRouterDeps = {}): Router {
         const h = snapshot?.hotspots.find((x) => x.id === hotspotId);
         if (!h) {
           res.status(404).json({ error: 'hotspot not found' });
+          return undefined;
+        }
+        if (!isFetchableUrl(h.url)) {
+          res.status(400).json({ error: 'hotspot url is not fetchable' });
           return undefined;
         }
         return store.addCard(id, hotspotToCard(h)).then((saved) => {
