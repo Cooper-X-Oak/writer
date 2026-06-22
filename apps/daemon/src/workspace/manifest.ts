@@ -1,8 +1,9 @@
 // Sidecar manifest — the per-project descriptor written as manifest.json. Its presence is the
 // commit marker: a project dir without a readable manifest is treated as incomplete and skipped.
 
-import type { Project } from '@app/contracts';
+import type { Project, WriteSource } from '@app/contracts';
 import { ARTIFACT_FILE } from './paths.js';
+import { parseWriteSource } from './provenance.js';
 
 export interface ProjectManifest {
   id: string;
@@ -14,6 +15,8 @@ export interface ProjectManifest {
   renderer: 'html';
   /** Entry artifact filename, relative to the project dir. */
   entry: string;
+  /** Where this draft originated, when seeded from a hotspot. Absent for manually-typed topics. */
+  source?: WriteSource;
 }
 
 export function buildManifest(input: {
@@ -21,6 +24,7 @@ export function buildManifest(input: {
   title: string;
   topic: string;
   createdAt: string;
+  source?: WriteSource;
 }): ProjectManifest {
   return {
     id: input.id,
@@ -30,6 +34,7 @@ export function buildManifest(input: {
     kind: 'article',
     renderer: 'html',
     entry: ARTIFACT_FILE,
+    ...(input.source ? { source: input.source } : {}),
   };
 }
 
@@ -53,6 +58,7 @@ export function parseManifest(json: string): ProjectManifest | undefined {
   ) {
     return undefined;
   }
+  const source = parseWriteSource(o.source); // carried forward only when shape-valid (else omitted)
   return {
     id: o.id,
     title: o.title,
@@ -61,5 +67,6 @@ export function parseManifest(json: string): ProjectManifest | undefined {
     kind: 'article',
     renderer: 'html',
     entry: o.entry,
+    ...(source ? { source } : {}),
   };
 }

@@ -7,12 +7,13 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { spawn as nodeSpawn } from 'node:child_process';
 import { claudeCode, detectAgent, type DetectResult } from '@app/agent-defs';
-import type { WriteStreamEvent } from '@app/contracts';
+import type { WriteStreamEvent, WriteSource } from '@app/contracts';
 import { startAgentRun, type AgentRunHandle } from '../agent/runner.js';
 import { buildWritePrompt, buildSystemPrompt } from '../agent/prompt.js';
 import { writeTempSystemPrompt, type SystemPromptFile } from '../agent/prompts/sysprompt-file.js';
 import { buildDiagnosis } from '../agent/diagnose.js';
 import { defaultProjectStore } from '../workspace/store.js';
+import { parseWriteSource } from '../workspace/provenance.js';
 
 export interface WriteCallbacks {
   onStatus: (message: string) => void;
@@ -26,8 +27,9 @@ export interface WriteHandle {
   abort: () => void;
 }
 
-/** Starts a write run and reports progress via callbacks; returns an abort handle. */
-export type WriteEngine = (topic: string, cb: WriteCallbacks) => WriteHandle;
+/** Starts a write run and reports progress via callbacks; returns an abort handle. `source` (when
+ *  the topic was seeded from a hotspot) is carried into the persisted project's provenance. */
+export type WriteEngine = (topic: string, cb: WriteCallbacks, source?: WriteSource) => WriteHandle;
 
 export interface EngineDeps {
   detect?: () => Promise<DetectResult>;
@@ -35,7 +37,7 @@ export interface EngineDeps {
   shell?: boolean;
   inactivityMs?: number;
   /** Persist the finished draft; defaults to the shared filesystem store. Injectable for tests. */
-  persist?: (input: { topic: string; body: string }) => Promise<{ id: string }>;
+  persist?: (input: { topic: string; body: string; source?: WriteSource }) => Promise<{ id: string }>;
   /** Prepare the three-axis system prompt as a temp file; defaults to the real writer. Injectable
    *  so tests don't touch the filesystem. */
   prepareSystemPrompt?: () => Promise<SystemPromptFile>;
@@ -51,7 +53,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
   const detect = deps.detect ?? (() => detectAgent(claudeCode));
   const persist = deps.persist ?? ((input) => defaultProjectStore.create(input));
   const prepareSystemPrompt = deps.prepareSystemPrompt ?? (() => writeTempSystemPrompt(buildSystemPrompt()));
-  return (topic, cb) => {
+  return (topic, cb, source) => {
     let aborted = false;
     let errored = false;
     let gotResult = false;
@@ -74,7 +76,7 @@ export function createDefaultEngine(deps: EngineDeps = {}): WriteEngine {
         cb.onDone(costUsd);
         return;
       }
-      persist({ topic, body: draft })
+      persist({ topic, body: draft, source })
         .then((project) => cb.onDone(costUsd, project.id))
         .catch((err: unknown) => {
           cb.onStatus(`draft not saved: ${err instanceof Error ? err.message : String(err)}`);
@@ -158,12 +160,15 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
   // AND the application/json body (a non-simple content-type that forces a CORS preflight). Do NOT
   // relax to text/plain or add a GET trigger without an explicit anti-CSRF token.
   router.post('/agent/write', (req: Request, res: Response) => {
-    const body = req.body as { topic?: unknown };
+    const body = req.body as { topic?: unknown; source?: unknown };
     const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
     if (!topic) {
       res.status(400).json({ error: 'topic is required' });
       return;
     }
+    // A malformed/non-http(s) source is ignored (treated as absent), never a 400 — provenance must
+    // never block a write.
+    const source = parseWriteSource(body.source);
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -184,18 +189,22 @@ export function createWriteRouter(engine: WriteEngine = defaultWriteEngine): Rou
       res.end();
     };
 
-    const handle = engine(topic, {
-      onStatus: (message) => send({ type: 'status', message }),
-      onDelta: (text) => send({ type: 'delta', text }),
-      onDone: (cost, projectId) => {
-        send({ type: 'done', costUsd: cost, projectId });
-        end();
+    const handle = engine(
+      topic,
+      {
+        onStatus: (message) => send({ type: 'status', message }),
+        onDelta: (text) => send({ type: 'delta', text }),
+        onDone: (cost, projectId) => {
+          send({ type: 'done', costUsd: cost, projectId });
+          end();
+        },
+        onError: (message) => {
+          send({ type: 'error', message });
+          end();
+        },
       },
-      onError: (message) => {
-        send({ type: 'error', message });
-        end();
-      },
-    });
+      source,
+    );
 
     // Detect a real client disconnect via the RESPONSE stream. NOTE: req.on('close') is wrong here —
     // it fires as soon as express.json() finishes reading the request body, not when the client

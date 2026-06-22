@@ -1,13 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Project } from '@app/contracts';
+import type { Project, Hotspot, WriteSource } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
 import { listProjects, getArtifact, patchBlock, fetchExportHtml } from '../lib/api/projects';
+import { listHotspots, refreshHotspots } from '../lib/api/hotspots';
 import { rewrite } from '../lib/api/rewrite';
 import { projectImageBase } from '../lib/api/base';
 import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
+import { HotspotSidebar } from './hotspot-sidebar';
 import { ArticleView } from './article-view';
 import { RewritePanel } from './rewrite-panel';
 import { ImagePanel } from './image-panel';
@@ -33,6 +35,8 @@ export function WriteStudio() {
   const [rewriteError, setRewriteError] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState(false);
   const [hasBridge, setHasBridge] = useState(false);
+  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const running = phase === 'running';
@@ -50,13 +54,37 @@ export function WriteStudio() {
     }
   }, []);
 
+  const loadHotspots = useCallback(async (): Promise<void> => {
+    try {
+      setHotspots(await listHotspots());
+    } catch {
+      // best-effort; empty until the first refresh
+    }
+  }, []);
+
   useEffect(() => {
     void refreshProjects();
-  }, [refreshProjects]);
+    void loadHotspots();
+  }, [refreshProjects, loadHotspots]);
 
-  const start = async (): Promise<void> => {
-    const t = topic.trim();
+  const doRefreshHotspots = async (): Promise<void> => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      setHotspots(await refreshHotspots());
+    } catch {
+      // best-effort; keep the existing list on failure
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Override lets a hotspot click pass its title + provenance explicitly, avoiding the setState
+  // batching race (start() reading stale `topic` right after setTopic).
+  const start = async (override?: { topic: string; source?: WriteSource }): Promise<void> => {
+    const t = (override?.topic ?? topic).trim();
     if (!t || running) return;
+    if (override) setTopic(t); // reflect the chosen hotspot in the input
     setSelected(null);
     setSelectedHtml(null);
     setDraft('');
@@ -82,6 +110,7 @@ export function WriteStudio() {
           },
         },
         controller.signal,
+        override?.source,
       );
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
@@ -90,6 +119,12 @@ export function WriteStudio() {
       }
     }
   };
+
+  const onPickHotspot = (h: Hotspot): void =>
+    void start({
+      topic: h.title,
+      source: { hotspotId: h.id, sourceType: h.sourceType, url: h.url, collectedAt: h.fetchedAt },
+    });
 
   const stop = (): void => {
     abortRef.current?.abort();
@@ -297,6 +332,15 @@ export function WriteStudio() {
           </>
         )}
       </div>
+
+      {!selected && (
+        <HotspotSidebar
+          hotspots={hotspots}
+          refreshing={refreshing}
+          onSelect={onPickHotspot}
+          onRefresh={() => void doRefreshHotspots()}
+        />
+      )}
     </section>
   );
 }

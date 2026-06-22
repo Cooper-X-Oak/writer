@@ -1,4 +1,4 @@
-import type { WriteStreamEvent } from '@app/contracts';
+import type { WriteStreamEvent, WriteSource } from '@app/contracts';
 
 const DAEMON_URL = process.env.NEXT_PUBLIC_DAEMON_URL ?? 'http://127.0.0.1:4319';
 
@@ -7,16 +7,18 @@ export interface WriteHandlers {
 }
 
 /** POST a topic and consume the SSE stream of write events. Resolves when the stream ends.
- *  Pass an AbortSignal to cancel (aborts the daemon-side run via the closed connection). */
+ *  Pass an AbortSignal to cancel (aborts the daemon-side run via the closed connection). `source`
+ *  carries provenance when the topic was seeded from a hotspot. */
 export async function streamWrite(
   topic: string,
   handlers: WriteHandlers,
   signal?: AbortSignal,
+  source?: WriteSource,
 ): Promise<void> {
   const res = await fetch(`${DAEMON_URL}/api/agent/write`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic }),
+    body: JSON.stringify(source ? { topic, source } : { topic }),
     signal,
   });
   if (!res.ok || !res.body) {

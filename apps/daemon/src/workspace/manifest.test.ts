@@ -53,3 +53,30 @@ describe('parseManifest', () => {
     expect(parseManifest(JSON.stringify({ title: 'x', createdAt: 'now', entry: 'a' }))).toBeUndefined();
   });
 });
+
+describe('manifest provenance (source)', () => {
+  const source = { hotspotId: 'hn-abc', sourceType: 'hn' as const, url: 'https://x.com/a', collectedAt: '2026-06-22T00:00:00.000Z' };
+
+  it('buildManifest copies a valid source; omits it when absent', () => {
+    expect(buildManifest({ id: 'i', title: 't', topic: 't', createdAt: 'now', source }).source).toEqual(source);
+    expect('source' in SAMPLE).toBe(false);
+  });
+
+  it('parseManifest carries a valid source forward', () => {
+    const m = buildManifest({ id: 'i', title: 't', topic: 't', createdAt: 'now', source });
+    expect(parseManifest(JSON.stringify(m))?.source).toEqual(source);
+  });
+
+  it('parseManifest drops a malformed source (e.g. non-http url) but still parses the rest', () => {
+    const raw = JSON.stringify({ id: 'i', title: 't', createdAt: 'now', entry: 'a.html', source: { ...source, url: 'javascript:1' } });
+    const m = parseManifest(raw);
+    expect(m).toBeDefined();
+    expect(m?.source).toBeUndefined();
+  });
+
+  it('an old manifest with no source still parses (backward compatible)', () => {
+    const m = parseManifest(JSON.stringify({ id: 'i', title: 't', createdAt: 'now', entry: 'a.html' }));
+    expect(m).toBeDefined();
+    expect(m?.source).toBeUndefined();
+  });
+});
