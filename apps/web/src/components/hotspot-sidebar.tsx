@@ -9,11 +9,12 @@ interface HotspotSidebarProps {
   refreshing: boolean;
   onSelect: (hotspot: Hotspot) => void;
   onRefresh: () => void;
+  onDismiss: (hotspot: Hotspot) => void;
   /** Rendered at the bottom of the rail (e.g. the RSS feed manager). */
   children?: React.ReactNode;
 }
 
-export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh, children }: HotspotSidebarProps) {
+export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh, onDismiss, children }: HotspotSidebarProps) {
   // Single now per render keeps the relative-time labels stable within a paint.
   const now = useMemo(() => Date.now(), [hotspots]);
   return (
@@ -29,7 +30,7 @@ export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh, chil
       ) : (
         <ul style={styles.list}>
           {hotspots.map((h) => (
-            <li key={h.id}>
+            <li key={h.id} style={styles.row}>
               <button style={styles.item} onClick={() => onSelect(h)} title={h.title}>
                 <span style={styles.title}>{h.title}</span>
                 <span style={styles.meta}>
@@ -43,6 +44,17 @@ export function HotspotSidebar({ hotspots, refreshing, onSelect, onRefresh, chil
                   )}
                   <time style={styles.time}>{formatRelative(h.publishedAt, now)}</time>
                 </span>
+              </button>
+              <button
+                style={styles.dismiss}
+                aria-label={`忽略 ${h.title}`}
+                title="忽略"
+                onClick={(e) => {
+                  e.stopPropagation(); // don't also start a write
+                  onDismiss(h);
+                }}
+              >
+                ✕
               </button>
             </li>
           ))}
@@ -69,11 +81,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   empty: { fontSize: 13, color: '#999', lineHeight: 1.6, marginTop: 12 },
   list: { listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 },
+  row: { display: 'flex', alignItems: 'flex-start', gap: 2 },
+  dismiss: { flexShrink: 0, border: 'none', background: 'transparent', color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '9px 6px 0', lineHeight: 1 },
   item: {
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     padding: '9px 10px',
     textAlign: 'left',
     background: 'transparent',

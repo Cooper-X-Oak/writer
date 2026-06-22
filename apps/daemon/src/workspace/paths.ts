@@ -16,6 +16,8 @@ export const IMAGES_DIR = 'images';
 export const HOTSPOTS_FILE = 'hotspots.json';
 /** Persisted user RSS feed list — a sidecar at the data-dir root. */
 export const FEEDS_FILE = 'feeds.json';
+/** Dismissed/hidden hotspot ids — a sidecar at the data-dir root (overlay on hotspots.json). */
+export const DISMISSED_FILE = 'dismissed.json';
 
 /** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
 export function dataDir(): string {
@@ -34,6 +36,11 @@ export function hotspotsPath(base: string = dataDir()): string {
 /** Path to the persisted user feed list (dataDir()/feeds.json). */
 export function feedsPath(base: string = dataDir()): string {
   return join(base, FEEDS_FILE);
+}
+
+/** Path to the dismissed-hotspots sidecar (dataDir()/dismissed.json). */
+export function dismissedPath(base: string = dataDir()): string {
+  return join(base, DISMISSED_FILE);
 }
 
 export function projectDir(root: string, id: string): string {

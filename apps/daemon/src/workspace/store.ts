@@ -85,6 +85,9 @@ export interface ProjectStore {
   /** Render a fully self-contained article (images inlined as data URIs, CSS embedded) for export.
    *  Returns undefined if the id is unknown/unsafe. */
   exportHtml(id: string): Promise<string | undefined>;
+  /** Delete a project directory. Idempotent (missing dir → no-op). Returns undefined for an
+   *  unknown/unsafe id (route → 404), else { id }. */
+  deleteProject(id: string): Promise<{ id: string } | undefined>;
 }
 
 export interface AddImageInput {
@@ -306,6 +309,14 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
 
     async readImage(id, name) {
       return loadImage(id, name);
+    },
+
+    async deleteProject(id) {
+      // isSafeProjectId is the SOLE traversal defense: it forbids separators/./.. so projectDir
+      // can only ever resolve to a direct child of root. No second sanitizer, no string concat.
+      if (!isSafeProjectId(id)) return undefined;
+      await rm(projectDir(root, id), { recursive: true, force: true }); // force → idempotent no-op
+      return { id };
     },
 
     async exportHtml(id) {

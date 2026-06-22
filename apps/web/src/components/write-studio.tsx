@@ -11,9 +11,10 @@ import {
   deleteBlock,
   moveBlock,
   renameTitle,
+  deleteProject,
   fetchExportHtml,
 } from '../lib/api/projects';
-import { listHotspots, refreshHotspots } from '../lib/api/hotspots';
+import { listHotspots, refreshHotspots, dismissHotspot } from '../lib/api/hotspots';
 import { listFeeds, addFeed, removeFeed } from '../lib/api/feeds';
 import { rewrite } from '../lib/api/rewrite';
 import { projectImageBase } from '../lib/api/base';
@@ -183,6 +184,26 @@ export function WriteStudio() {
       source: { hotspotId: h.id, sourceType: h.sourceType, url: h.url, collectedAt: h.fetchedAt },
     });
 
+  const onDismissHotspot = async (h: Hotspot): Promise<void> => {
+    setHotspots((list) => list.filter((x) => x.id !== h.id)); // optimistic
+    try {
+      await dismissHotspot(h.id);
+    } catch {
+      void loadHotspots(); // roll back to the server's truth on failure
+    }
+  };
+
+  const doDeleteProject = async (project: Project): Promise<void> => {
+    if (!window.confirm(`确定删除「${project.title}」？此操作不可撤销。`)) return;
+    try {
+      await deleteProject(project.id);
+      if (selected?.id === project.id) newWrite(); // clear the open pane if it was this project
+      await refreshProjects();
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const stop = (): void => {
     abortRef.current?.abort();
     setPhase('idle');
@@ -340,6 +361,7 @@ export function WriteStudio() {
         selectedId={selected?.id ?? null}
         onSelect={(p) => void openProject(p)}
         onNew={newWrite}
+        onDelete={(p) => void doDeleteProject(p)}
       />
 
       <div style={styles.main}>
@@ -396,6 +418,12 @@ export function WriteStudio() {
                     导出 PDF
                   </button>
                 )}
+                <button
+                  style={{ ...styles.btn, ...styles.ghostBtn, ...styles.dangerBtn }}
+                  onClick={() => void doDeleteProject(selected)}
+                >
+                  删除
+                </button>
                 <button style={styles.btn} onClick={newWrite}>
                   ＋ 新写作
                 </button>
@@ -498,6 +526,7 @@ export function WriteStudio() {
           refreshing={refreshing}
           onSelect={onPickHotspot}
           onRefresh={() => void doRefreshHotspots()}
+          onDismiss={(h) => void onDismissHotspot(h)}
         >
           <FeedManager
             feeds={feeds}
@@ -543,6 +572,7 @@ const styles: Record<string, React.CSSProperties> = {
   viewHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   viewActions: { display: 'flex', gap: 8 },
   ghostBtn: { color: '#111', background: '#fff', border: '1px solid #d0d0d0' },
+  dangerBtn: { color: '#c0392b', border: '1px solid #e6b0aa' },
   editOn: { color: '#fff', background: '#2ecc71', border: '1px solid #2ecc71' },
   hint: { margin: '0 0 12px', fontSize: 13, color: '#2e8b57' },
   viewTitle: { margin: 0, fontSize: 20, color: '#1a1a1a', cursor: 'text' },

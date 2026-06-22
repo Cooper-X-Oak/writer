@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import type { Hotspot, HotspotSnapshot } from '@app/contracts';
 import { createHotspotsRouter, type HotspotsRouterDeps } from './hotspots.js';
 import type { HotspotStore } from '../collect/store.js';
+import type { DismissedStore } from '../collect/dismissed-store.js';
 
 function serve(deps: HotspotsRouterDeps): Promise<{ url: string; close: () => void }> {
   const app = express();
@@ -59,6 +60,48 @@ describe('GET /api/hotspots', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('dismissed overlay', () => {
+  const SNAP2: HotspotSnapshot = {
+    collectedAt: '2026-06-22T00:00:00.000Z',
+    hotspots: [HOTSPOT, { ...HOTSPOT, id: 'hn-def', title: 'T2' }],
+  };
+  const fakeDismissed = (init: string[] = []): DismissedStore => {
+    const set = new Set(init);
+    return {
+      read: () => Promise.resolve(new Set(set)),
+      dismiss: (id) => { set.add(id); return Promise.resolve(); },
+      restore: (id) => { set.delete(id); return Promise.resolve(); },
+    };
+  };
+
+  it('GET /hotspots filters out dismissed ids (snapshot of 2, one dismissed → 1)', async () => {
+    const { url, close } = await serve({ store: fakeStore({ read: () => Promise.resolve(SNAP2) }), dismissed: fakeDismissed(['hn-def']) });
+    try {
+      const body = (await (await fetch(`${url}/hotspots`)).json()) as { hotspots: { id: string }[] };
+      expect(body.hotspots.map((h) => h.id)).toEqual(['hn-abc']);
+    } finally { close(); }
+  });
+
+  it('POST /hotspots/:id/dismiss → 204 and dismisses; DELETE → 204 and restores', async () => {
+    const dismissed = fakeDismissed();
+    const { url, close } = await serve({ store: fakeStore({ read: () => Promise.resolve(SNAP2) }), dismissed });
+    try {
+      expect((await fetch(`${url}/hotspots/hn-def/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(204);
+      expect((await dismissed.read()).has('hn-def')).toBe(true);
+      expect((await fetch(`${url}/hotspots/hn-def/dismiss`, { method: 'DELETE' })).status).toBe(204);
+      expect((await dismissed.read()).has('hn-def')).toBe(false);
+    } finally { close(); }
+  });
+
+  it('dismiss returns 500 when the sidecar write throws', async () => {
+    const dismissed: DismissedStore = { read: () => Promise.resolve(new Set()), dismiss: () => Promise.reject(new Error('disk')), restore: () => Promise.resolve() };
+    const { url, close } = await serve({ store: fakeStore(), dismissed });
+    try {
+      expect((await fetch(`${url}/hotspots/x/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(500);
+    } finally { close(); }
   });
 });
 
