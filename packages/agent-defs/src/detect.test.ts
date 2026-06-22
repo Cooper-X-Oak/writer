@@ -4,9 +4,9 @@ import { claudeCode } from './defs/claude-code.js';
 
 describe('pickResolvedPath', () => {
   it('prefers a Windows-executable extension over the bare sh shim', () => {
-    // exactly what `where claude` returns on the real machine (measured)
-    const lines = ['C:\\nvm4w\\nodejs\\claude', 'C:\\nvm4w\\nodejs\\claude.cmd'];
-    expect(pickResolvedPath(lines, true)).toBe('C:\\nvm4w\\nodejs\\claude.cmd');
+    // shape of a typical `where claude` on Windows: the bare sh shim plus a .cmd executable
+    const lines = ['C:\\tools\\nodejs\\claude', 'C:\\tools\\nodejs\\claude.cmd'];
+    expect(pickResolvedPath(lines, true)).toBe('C:\\tools\\nodejs\\claude.cmd');
   });
 
   it('falls back to the first line when no win-executable extension is present', () => {

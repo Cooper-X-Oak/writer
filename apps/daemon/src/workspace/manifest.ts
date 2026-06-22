@@ -39,7 +39,7 @@ export function buildManifest(input: {
 }
 
 export function manifestToProject(m: ProjectManifest, dir: string): Project {
-  return { id: m.id, dir, title: m.title, createdAt: m.createdAt };
+  return { id: m.id, dir, title: m.title, createdAt: m.createdAt, ...(m.source ? { source: m.source } : {}) };
 }
 
 /** Tolerant parse: return undefined (not throw) on malformed/partial JSON so listing skips junk. */

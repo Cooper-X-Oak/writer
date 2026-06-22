@@ -23,6 +23,7 @@ import { ProjectSidebar } from './project-sidebar';
 import { HotspotSidebar } from './hotspot-sidebar';
 import { FeedManager } from './feed-manager';
 import { ArticleView } from './article-view';
+import { ProvenanceLine } from './provenance-line';
 import { BlockToolbar } from './block-toolbar';
 import { RewritePanel } from './rewrite-panel';
 import { EditPanel } from './edit-panel';
@@ -429,6 +430,7 @@ export function WriteStudio() {
                 </button>
               </div>
             </header>
+            {selected.source && <ProvenanceLine source={selected.source} />}
             {status && <p style={{ ...styles.status, color: '#666' }}>{status}</p>}
             {editMode && !selection && <p style={styles.hint}>点击文章里的任意一段：可手动编辑、AI 改写、移动、插入或删除。</p>}
             {selectedHtml == null ? (

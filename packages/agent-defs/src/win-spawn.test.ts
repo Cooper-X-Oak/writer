@@ -4,7 +4,7 @@ import { quoteWinArg, buildWinCmdInvocation } from './win-spawn.js';
 describe('quoteWinArg', () => {
   it('leaves a plain token unquoted', () => {
     expect(quoteWinArg('--verbose')).toBe('--verbose');
-    expect(quoteWinArg('C:\\nvm4w\\nodejs\\claude.cmd')).toBe('C:\\nvm4w\\nodejs\\claude.cmd');
+    expect(quoteWinArg('C:\\tools\\nodejs\\claude.cmd')).toBe('C:\\tools\\nodejs\\claude.cmd');
   });
 
   it('quotes the empty string', () => {
