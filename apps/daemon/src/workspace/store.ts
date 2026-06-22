@@ -11,13 +11,15 @@ import {
   projectDir,
   manifestPath,
   artifactPath,
+  bodyPath,
   isSafeProjectId,
   createProjectId,
   ARTIFACT_FILE,
+  BODY_FILE,
   MANIFEST_FILE,
 } from './paths.js';
 import { buildManifest, manifestToProject, parseManifest, type ProjectManifest } from './manifest.js';
-import { buildArticleHtml } from './render.js';
+import { buildArticleHtml, patchBody, blockIdToIndex, splitBlocks } from './render.js';
 
 export interface CreateProjectInput {
   topic: string;
@@ -32,6 +34,11 @@ export interface ProjectStore {
   list(): Promise<Project[]>;
   /** The rendered article HTML, or undefined if the id is unknown/unsafe. */
   readArtifact(id: string): Promise<string | undefined>;
+  /** The editable plain-text body, or undefined if unknown/unsafe. */
+  readBody(id: string): Promise<string | undefined>;
+  /** Replace one block's text and re-render. Returns the new HTML, or undefined if the id/block is
+   *  unknown/unsafe. */
+  patchBlock(id: string, blockId: string, text: string): Promise<{ html: string } | undefined>;
 }
 
 export interface StoreDeps {
@@ -71,7 +78,8 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
         createdAt: now().toISOString(),
       });
 
-      // artifact first, manifest last (the commit marker).
+      // body (editable source) + artifact first, manifest last (the commit marker).
+      await atomicWrite(dir, BODY_FILE, `${body.trim()}\n`);
       await atomicWrite(dir, ARTIFACT_FILE, buildArticleHtml(finalTitle, body));
       await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
       return manifestToProject(manifest, dir);
@@ -107,6 +115,38 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
       } catch {
         return undefined;
       }
+    },
+
+    async readBody(id) {
+      if (!isSafeProjectId(id)) return undefined;
+      try {
+        return await readFile(bodyPath(projectDir(root, id)), 'utf8');
+      } catch {
+        return undefined;
+      }
+    },
+
+    async patchBlock(id, blockId, text) {
+      if (!isSafeProjectId(id)) return undefined;
+      const index = blockIdToIndex(blockId);
+      if (index === undefined) return undefined;
+      const dir = projectDir(root, id);
+      let body: string;
+      let manifest: ProjectManifest | undefined;
+      try {
+        body = await readFile(bodyPath(dir), 'utf8');
+        manifest = parseManifest(await readFile(manifestPath(dir), 'utf8'));
+      } catch {
+        return undefined;
+      }
+      if (!manifest || index >= splitBlocks(body).length) return undefined;
+
+      const nextBody = patchBody(body, index, text);
+      const html = buildArticleHtml(manifest.title, nextBody);
+      // body (source) then artifact (derived) — both atomic.
+      await atomicWrite(dir, BODY_FILE, `${nextBody.trim()}\n`);
+      await atomicWrite(dir, ARTIFACT_FILE, html);
+      return { html };
     },
   };
 }

@@ -8,6 +8,7 @@ import type { ProjectStore } from '../workspace/store.js';
 
 function serve(store: ProjectStore): Promise<{ url: string; close: () => void }> {
   const app = express();
+  app.use(express.json());
   app.use('/api', createProjectsRouter(store));
   return new Promise((resolve) => {
     const server: Server = app.listen(0, '127.0.0.1', () => {
@@ -24,6 +25,8 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
     create: over.create ?? (() => Promise.reject(new Error('not used'))),
     list: over.list ?? (() => Promise.resolve([PROJECT])),
     readArtifact: over.readArtifact ?? (() => Promise.resolve('<h1>hi</h1>')),
+    readBody: over.readBody ?? (() => Promise.resolve('hi')),
+    patchBlock: over.patchBlock ?? (() => Promise.resolve({ html: '<h1>patched</h1>' })),
   };
 }
 
@@ -68,6 +71,54 @@ describe('GET /api/projects/:id/artifact', () => {
     try {
       const res = await fetch(`${url}/projects/nope/artifact`);
       expect(res.status).toBe(404);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe('POST /api/projects/:id/block', () => {
+  async function post(url: string, body: unknown): Promise<Response> {
+    return fetch(`${url}/projects/p1/block`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('patches a block and returns the new HTML', async () => {
+    let captured: { id: string; blockId: string; text: string } | undefined;
+    const store = fakeStore({
+      patchBlock: (id, blockId, text) => {
+        captured = { id, blockId, text };
+        return Promise.resolve({ html: '<h1>patched</h1>' });
+      },
+    });
+    const { url, close } = await serve(store);
+    try {
+      const res = await post(url, { blockId: 'b1', text: '新文本' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ html: '<h1>patched</h1>' });
+      expect(captured).toEqual({ id: 'p1', blockId: 'b1', text: '新文本' });
+    } finally {
+      close();
+    }
+  });
+
+  it('rejects a missing blockId or empty text with 400', async () => {
+    const { url, close } = await serve(fakeStore());
+    try {
+      expect((await post(url, { text: 'x' })).status).toBe(400);
+      expect((await post(url, { blockId: 'b1', text: '  ' })).status).toBe(400);
+    } finally {
+      close();
+    }
+  });
+
+  it('returns 404 when the store reports the block/project missing', async () => {
+    const { url, close } = await serve(fakeStore({ patchBlock: () => Promise.resolve(undefined) }));
+    try {
+      expect((await post(url, { blockId: 'b9', text: 'x' })).status).toBe(404);
     } finally {
       close();
     }

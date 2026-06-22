@@ -7,6 +7,7 @@ import { logger } from './logger.js';
 import { healthRouter } from './api/health.js';
 import { agentRouter } from './api/agent.js';
 import { writeRouter } from './api/write.js';
+import { rewriteRouter } from './api/rewrite.js';
 import { projectsRouter } from './api/projects.js';
 
 // Local-first: the daemon is loopback-only, but the Electron renderer / Next dev server is a
@@ -32,6 +33,7 @@ export function createServer(): Express {
   app.use('/api', healthRouter);
   app.use('/api', agentRouter);
   app.use('/api', writeRouter);
+  app.use('/api', rewriteRouter);
   app.use('/api', projectsRouter);
   return app;
 }
