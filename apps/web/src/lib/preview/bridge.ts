@@ -34,10 +34,17 @@ function bridgeScript(editMode: boolean): string {
 })();</script>`;
 }
 
+/** Rewrite relative image srcs (images/…) to absolute URLs the daemon serves, so they resolve
+ *  inside the iframe srcDoc (which has no base URL). */
+function rewriteImageSrcs(html: string, imageBaseUrl: string): string {
+  return html.replace(/(<img\b[^>]*\bsrc=)(["'])images\//g, `$1$2${imageBaseUrl}images/`);
+}
+
 /** Inject the bridge into the article HTML for use as an iframe srcDoc. */
-export function buildPreviewSrcDoc(html: string, editMode: boolean): string {
+export function buildPreviewSrcDoc(html: string, editMode: boolean, imageBaseUrl?: string): string {
+  const withImages = imageBaseUrl ? rewriteImageSrcs(html, imageBaseUrl) : html;
   const script = bridgeScript(editMode);
-  return html.includes('</body>') ? html.replace('</body>', `${script}</body>`) : html + script;
+  return withImages.includes('</body>') ? withImages.replace('</body>', `${script}</body>`) : withImages + script;
 }
 
 /** Parent-side guard: a message is a trusted preview select only if it came from our iframe window

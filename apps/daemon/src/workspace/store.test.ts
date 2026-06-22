@@ -108,4 +108,32 @@ describe('ProjectStore', () => {
     expect(await store.patchBlock('p1', 'b9', 'x')).toBeUndefined();
     expect(await store.patchBlock('../etc', 'b0', 'x')).toBeUndefined();
   });
+
+  it('addImage() saves the file, appends an image block, and serves it back', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'a paragraph' });
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]); // fake PNG bytes
+
+    const result = await store.addImage('p1', { bytes, contentType: 'image/png', alt: '配图' });
+    expect(result?.name).toMatch(/^[0-9a-f]{16}\.png$/);
+    expect(result?.html).toContain(`<figure data-block="b1"><img src="images/${result?.name ?? ''}"`);
+
+    const img = await store.readImage('p1', result?.name ?? '');
+    expect(img?.contentType).toBe('image/png');
+    expect(img?.bytes.equals(bytes)).toBe(true);
+  });
+
+  it('addImage() rejects an unsupported content-type and unknown project', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'x' });
+    expect(await store.addImage('p1', { bytes: Buffer.from([1]), contentType: 'application/pdf' })).toBeUndefined();
+    expect(await store.addImage('nope', { bytes: Buffer.from([1]), contentType: 'image/png' })).toBeUndefined();
+  });
+
+  it('readImage() rejects unsafe ids/names (no traversal)', async () => {
+    const store = createProjectStore({ root });
+    expect(await store.readImage('../etc', 'a.png')).toBeUndefined();
+    expect(await store.readImage('p1', '../../secret')).toBeUndefined();
+    expect(await store.readImage('p1', 'a.exe')).toBeUndefined(); // unsupported ext
+  });
 });

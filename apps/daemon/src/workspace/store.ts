@@ -4,7 +4,7 @@
 
 import { mkdir, writeFile, rename, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import type { Project } from '@app/contracts';
 import {
   projectsRoot,
@@ -12,14 +12,31 @@ import {
   manifestPath,
   artifactPath,
   bodyPath,
+  imagesDir,
   isSafeProjectId,
+  isSafeImageName,
   createProjectId,
   ARTIFACT_FILE,
   BODY_FILE,
+  IMAGES_DIR,
   MANIFEST_FILE,
 } from './paths.js';
 import { buildManifest, manifestToProject, parseManifest, type ProjectManifest } from './manifest.js';
-import { buildArticleHtml, patchBody, blockIdToIndex, splitBlocks } from './render.js';
+import { buildArticleHtml, patchBody, blockIdToIndex, splitBlocks, imageBlockMarkdown } from './render.js';
+
+const IMAGE_EXT_BY_TYPE: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+const IMAGE_TYPE_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+};
 
 export interface CreateProjectInput {
   topic: string;
@@ -39,6 +56,18 @@ export interface ProjectStore {
   /** Replace one block's text and re-render. Returns the new HTML, or undefined if the id/block is
    *  unknown/unsafe. */
   patchBlock(id: string, blockId: string, text: string): Promise<{ html: string } | undefined>;
+  /** Save a generated image, append it as an image block, re-render. Returns the new HTML +
+   *  filename, or undefined if the id/content-type is unknown/unsafe. */
+  addImage(id: string, input: AddImageInput): Promise<{ html: string; name: string } | undefined>;
+  /** Read an image file's bytes + content-type, or undefined if unknown/unsafe. */
+  readImage(id: string, name: string): Promise<{ bytes: Buffer; contentType: string } | undefined>;
+}
+
+export interface AddImageInput {
+  bytes: Buffer;
+  contentType: string;
+  /** Alt text / caption (defaults to the topic). */
+  alt?: string;
 }
 
 export interface StoreDeps {
@@ -51,6 +80,17 @@ export interface StoreDeps {
 async function atomicWrite(dir: string, name: string, content: string): Promise<void> {
   const tmp = join(dir, `.${name}.${randomBytes(6).toString('hex')}.tmp`);
   await writeFile(tmp, content, 'utf8');
+  try {
+    await rename(tmp, join(dir, name));
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+async function atomicWriteBuffer(dir: string, name: string, bytes: Buffer): Promise<void> {
+  const tmp = join(dir, `.${name}.${randomBytes(6).toString('hex')}.tmp`);
+  await writeFile(tmp, bytes);
   try {
     await rename(tmp, join(dir, name));
   } catch (err) {
@@ -147,6 +187,46 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
       await atomicWrite(dir, BODY_FILE, `${nextBody.trim()}\n`);
       await atomicWrite(dir, ARTIFACT_FILE, html);
       return { html };
+    },
+
+    async addImage(id, { bytes, contentType, alt }) {
+      if (!isSafeProjectId(id)) return undefined;
+      const ext = IMAGE_EXT_BY_TYPE[contentType];
+      if (!ext) return undefined; // unsupported content-type
+      const dir = projectDir(root, id);
+      let body: string;
+      let manifest: ProjectManifest | undefined;
+      try {
+        body = await readFile(bodyPath(dir), 'utf8');
+        manifest = parseManifest(await readFile(manifestPath(dir), 'utf8'));
+      } catch {
+        return undefined;
+      }
+      if (!manifest) return undefined;
+
+      const name = `${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}.${ext}`;
+      await mkdir(imagesDir(dir), { recursive: true });
+      await atomicWriteBuffer(imagesDir(dir), name, bytes);
+
+      const block = imageBlockMarkdown(`${IMAGES_DIR}/${name}`, alt ?? manifest.topic);
+      const nextBody = `${body.trim()}\n\n${block}`;
+      const html = buildArticleHtml(manifest.title, nextBody);
+      await atomicWrite(dir, BODY_FILE, `${nextBody.trim()}\n`);
+      await atomicWrite(dir, ARTIFACT_FILE, html);
+      return { html, name };
+    },
+
+    async readImage(id, name) {
+      if (!isSafeProjectId(id) || !isSafeImageName(name)) return undefined;
+      const ext = name.split('.').pop()?.toLowerCase() ?? '';
+      const contentType = IMAGE_TYPE_BY_EXT[ext];
+      if (!contentType) return undefined;
+      try {
+        const bytes = await readFile(join(imagesDir(projectDir(root, id)), name));
+        return { bytes, contentType };
+      } catch {
+        return undefined;
+      }
     },
   };
 }

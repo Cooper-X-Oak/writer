@@ -27,6 +27,8 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
     readArtifact: over.readArtifact ?? (() => Promise.resolve('<h1>hi</h1>')),
     readBody: over.readBody ?? (() => Promise.resolve('hi')),
     patchBlock: over.patchBlock ?? (() => Promise.resolve({ html: '<h1>patched</h1>' })),
+    addImage: over.addImage ?? (() => Promise.resolve({ html: '<figure></figure>', name: 'img.png' })),
+    readImage: over.readImage ?? (() => Promise.resolve({ bytes: Buffer.from([1, 2, 3]), contentType: 'image/png' })),
   };
 }
 
@@ -119,6 +121,66 @@ describe('POST /api/projects/:id/block', () => {
     const { url, close } = await serve(fakeStore({ patchBlock: () => Promise.resolve(undefined) }));
     try {
       expect((await post(url, { blockId: 'b9', text: 'x' })).status).toBe(404);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe('image endpoints', () => {
+  it('POST /projects/:id/image accepts raw bytes and returns {html,name}', async () => {
+    let captured: { id: string; contentType: string; alt?: string; len: number } | undefined;
+    const store = fakeStore({
+      addImage: (id, input) => {
+        captured = { id, contentType: input.contentType, alt: input.alt, len: input.bytes.length };
+        return Promise.resolve({ html: '<figure></figure>', name: 'abc.png' });
+      },
+    });
+    const { url, close } = await serve(store);
+    try {
+      const res = await fetch(`${url}/projects/p1/image?alt=cap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/png' },
+        body: new Uint8Array([1, 2, 3, 4]),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ html: '<figure></figure>', name: 'abc.png' });
+      expect(captured).toEqual({ id: 'p1', contentType: 'image/png', alt: 'cap', len: 4 });
+    } finally {
+      close();
+    }
+  });
+
+  it('POST image returns 404 when the store rejects it (bad type/project)', async () => {
+    const { url, close } = await serve(fakeStore({ addImage: () => Promise.resolve(undefined) }));
+    try {
+      const res = await fetch(`${url}/projects/p1/image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: new Uint8Array([1]),
+      });
+      expect(res.status).toBe(404);
+    } finally {
+      close();
+    }
+  });
+
+  it('GET /projects/:id/images/:name serves bytes with the content-type', async () => {
+    const { url, close } = await serve(fakeStore());
+    try {
+      const res = await fetch(`${url}/projects/p1/images/img.png`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('image/png');
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+    } finally {
+      close();
+    }
+  });
+
+  it('GET image returns 404 when unknown', async () => {
+    const { url, close } = await serve(fakeStore({ readImage: () => Promise.resolve(undefined) }));
+    try {
+      expect((await fetch(`${url}/projects/p1/images/nope.png`)).status).toBe(404);
     } finally {
       close();
     }

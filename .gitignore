@@ -21,3 +21,6 @@ coverage/
 *.log
 .vscode/
 .idea/
+
+# Playwright MCP browser-automation artifacts
+.playwright-mcp/
