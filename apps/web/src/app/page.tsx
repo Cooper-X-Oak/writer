@@ -4,25 +4,19 @@ import { useEffect, useState } from 'react';
 import type { Health } from '@app/contracts';
 import { getHealth } from '../lib/api/health';
 import { AgentGuide } from '../components/agent-guide';
-
-type State =
-  | { kind: 'loading' }
-  | { kind: 'ok'; health: Health }
-  | { kind: 'error'; message: string };
+import { WriteStudio } from '../components/write-studio';
 
 export default function Home() {
-  const [state, setState] = useState<State>({ kind: 'loading' });
+  const [daemonOk, setDaemonOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getHealth()
-      .then((health) => {
-        if (!cancelled) setState({ kind: 'ok', health });
+      .then((h: Health) => {
+        if (!cancelled) setDaemonOk(h.status === 'ok');
       })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
-        }
+      .catch(() => {
+        if (!cancelled) setDaemonOk(false);
       });
     return () => {
       cancelled = true;
@@ -30,16 +24,16 @@ export default function Home() {
   }, []);
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: 24 }}>
-      <h1>Hotspot Writer</h1>
-      {state.kind === 'loading' && <p>checking daemon…</p>}
-      {state.kind === 'ok' && (
-        <p>
-          daemon ok — version {state.health.version} — uptime {state.health.uptimeMs}ms
-        </p>
-      )}
-      {state.kind === 'error' && <p>daemon unreachable: {state.message}</p>}
+    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '32px 28px', color: '#111' }}>
+      <header style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 26, letterSpacing: -0.5 }}>Hotspot Writer</h1>
+        <span style={{ fontSize: 12, color: daemonOk ? '#2ecc71' : '#bbb' }}>
+          {daemonOk === null ? '连接中…' : daemonOk ? '● daemon 在线' : '○ daemon 离线'}
+        </span>
+      </header>
+
       <AgentGuide />
+      <WriteStudio />
     </main>
   );
 }
