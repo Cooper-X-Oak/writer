@@ -63,6 +63,12 @@ export interface ProjectStore {
   create(input: CreateProjectInput): Promise<Project>;
   /** Create a project that starts as a bare material corpus (manifest only, no body/article). */
   createCorpus(input: { title?: string }): Promise<Project>;
+  /** Write a streamed draft INTO an existing project (a corpus → draft transition): body + article +
+   *  manifest(stage:draft). Returns { id }, or undefined for an unknown/unsafe id. */
+  commitDraft(
+    id: string,
+    input: { topic: string; body: string; title?: string; source?: WriteSource },
+  ): Promise<{ id: string } | undefined>;
   list(): Promise<Project[]>;
   /** The rendered article HTML, or undefined if the id is unknown/unsafe. */
   readArtifact(id: string): Promise<string | undefined>;
@@ -214,6 +220,32 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
       });
       await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
       return manifestToProject(manifest, dir);
+    },
+
+    async commitDraft(id, { topic, body, title, source }) {
+      if (!isSafeProjectId(id)) return undefined;
+      const dir = projectDir(root, id);
+      let existing: ProjectManifest | undefined;
+      try {
+        existing = parseManifest(await readFile(manifestPath(dir), 'utf8'));
+      } catch {
+        return undefined;
+      }
+      if (!existing) return undefined;
+      const finalTitle = (title ?? topic).trim() || existing.title;
+      const manifest: ProjectManifest = buildManifest({
+        id,
+        title: finalTitle,
+        topic,
+        createdAt: existing.createdAt, // preserve original creation time
+        stage: 'draft', // corpus → draft
+        source: source ?? existing.source,
+      });
+      // body + artifact first, manifest LAST (the commit marker). materials.json is untouched.
+      await atomicWrite(dir, BODY_FILE, `${body.trim()}\n`);
+      await atomicWrite(dir, ARTIFACT_FILE, buildArticleHtml(finalTitle, body));
+      await atomicWrite(dir, MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
+      return { id };
     },
 
     async list() {

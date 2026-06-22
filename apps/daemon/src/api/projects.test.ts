@@ -24,6 +24,7 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
   return {
     create: over.create ?? (() => Promise.reject(new Error('not used'))),
     createCorpus: over.createCorpus ?? (() => Promise.resolve({ ...PROJECT, stage: 'corpus' })),
+    commitDraft: over.commitDraft ?? (() => Promise.resolve({ id: 'p1' })),
     list: over.list ?? (() => Promise.resolve([PROJECT])),
     readArtifact: over.readArtifact ?? (() => Promise.resolve('<h1>hi</h1>')),
     readBody: over.readBody ?? (() => Promise.resolve('hi')),

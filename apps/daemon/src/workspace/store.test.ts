@@ -49,6 +49,18 @@ describe('ProjectStore', () => {
     expect((await store.list()).find((p) => p.id === 'c1')?.stage).toBe('corpus');
   });
 
+  it('commitDraft() turns a corpus project into a draft (writes body+article, stage→draft)', async () => {
+    const store = createProjectStore({ root, genId: () => 'c1', now: () => new Date('2026-06-22T00:00:00.000Z') });
+    await store.createCorpus({ title: '原标题' });
+    const r = await store.commitDraft('c1', { topic: '远程办公', body: '第一段。\n\n第二段。' });
+    expect(r).toEqual({ id: 'c1' });
+    const files = await readdir(join(root, 'c1'));
+    expect(files).toContain(ARTIFACT_FILE);
+    expect(await store.readArtifact('c1')).toContain('<h1>远程办公</h1>');
+    expect((await store.list()).find((p) => p.id === 'c1')?.stage).toBe('draft');
+    expect(await store.commitDraft('missing', { topic: 't', body: 'b' })).toBeUndefined();
+  });
+
   it('list() returns saved projects newest-first', async () => {
     const store = createProjectStore({ root });
     let n = 0;

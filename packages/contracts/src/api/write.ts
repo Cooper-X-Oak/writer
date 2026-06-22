@@ -19,6 +19,8 @@ export interface WriteRequest {
   topic: string;
   /** Set when the topic was seeded from a collected hotspot. */
   source?: WriteSource;
+  /** Write INTO this existing project (a corpus → draft transition) instead of creating a new one. */
+  projectId?: string;
 }
 
 // Wire events for the POST /api/agent/write SSE stream. Deliberately decoupled from the daemon's
