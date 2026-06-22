@@ -4,7 +4,7 @@
 // NOTE: This file is Electron-only — its window behavior must be verified on a real desktop
 // (Windows 11 per the plan); CI exercises only the platform-neutral helpers it imports.
 
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { startDaemon, type DaemonHandle } from './daemon-process.js';
@@ -17,6 +17,7 @@ import {
   type StoredImageConfig,
 } from './image-config.js';
 import { generateImage } from './image-gen.js';
+import { exportArticlePdf } from './pdf-export.js';
 
 const DAEMON_PORT = Number(process.env.PORT ?? 4319);
 const WEB_URL = process.env.WEB_URL ?? 'http://localhost:3000';
@@ -62,6 +63,53 @@ function registerImageIpc(): void {
   });
 }
 
+// Render self-contained HTML to a PDF buffer via an offscreen window. The HTML is written to a
+// temp file (not a data: URL) so multi-MB inlined images load without hitting URL-length limits.
+async function htmlToPdf(html: string): Promise<Buffer> {
+  const { writeFile, rm, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const tmpDir = await mkdtemp(join(tmpdir(), 'hsw-pdf-'));
+  const tmpFile = join(tmpDir, 'article.html');
+  await writeFile(tmpFile, html, 'utf8');
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, javascript: false },
+  });
+  try {
+    await win.loadFile(tmpFile);
+    return await win.webContents.printToPDF({ printBackground: true });
+  } finally {
+    win.destroy();
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function registerExportIpc(): void {
+  ipcMain.handle('hsw:exportPdf', (_e, req: { projectId?: unknown; title?: unknown }) => {
+    const projectId = typeof req?.projectId === 'string' ? req.projectId : '';
+    const title = typeof req?.title === 'string' ? req.title : '';
+    return exportArticlePdf(
+      {
+        fetchHtml: async (id) => {
+          const url = `http://127.0.0.1:${String(DAEMON_PORT)}/api/projects/${encodeURIComponent(id)}/export/html`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`export fetch failed: ${String(res.status)}`);
+          return res.text();
+        },
+        htmlToPdf,
+        pickSavePath: async (defaultName) => {
+          const { canceled, filePath } = await dialog.showSaveDialog({
+            defaultPath: defaultName,
+            filters: [{ name: 'PDF', extensions: ['pdf'] }],
+          });
+          return canceled ? undefined : filePath;
+        },
+      },
+      { projectId, title },
+    );
+  });
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function loadWebWithRetry(win: BrowserWindow, url: string, attempts = 40, delayMs = 300): Promise<void> {
@@ -95,6 +143,7 @@ app
     if (!DAEMON_EXTERNAL) daemon = startDaemon({ port: DAEMON_PORT });
     await waitForHealth(`http://127.0.0.1:${DAEMON_PORT}/api/health`);
     registerImageIpc();
+    registerExportIpc();
     await createWindow();
 
     app.on('activate', () => {

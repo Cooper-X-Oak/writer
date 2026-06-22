@@ -17,6 +17,18 @@ export async function getArtifact(id: string, signal?: AbortSignal): Promise<str
   return res.text();
 }
 
+/** URL of the self-contained HTML export (images inlined as data URIs). */
+export function exportHtmlUrl(id: string): string {
+  return `${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/export/html`;
+}
+
+/** Fetch the self-contained article as a Blob, ready to download. */
+export async function fetchExportHtml(id: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await fetch(exportHtmlUrl(id), { signal });
+  if (!res.ok) throw new Error(`export failed: ${res.status}`);
+  return res.blob();
+}
+
 /** Replace one block's text; returns the re-rendered article HTML. */
 export async function patchBlock(id: string, blockId: string, text: string): Promise<string> {
   const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/block`, {

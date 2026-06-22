@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listProjects, getArtifact, patchBlock } from './projects';
+import { listProjects, getArtifact, patchBlock, exportHtmlUrl, fetchExportHtml } from './projects';
 import type { Project } from '@app/contracts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -48,6 +48,25 @@ describe('getArtifact', () => {
   it('throws when the response is not ok', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response));
     await expect(getArtifact('nope')).rejects.toThrow(/load artifact failed: 404/);
+  });
+});
+
+describe('exportHtmlUrl', () => {
+  it('builds the export endpoint with the id encoded', () => {
+    expect(exportHtmlUrl('a/b')).toContain('/projects/a%2Fb/export/html');
+  });
+});
+
+describe('fetchExportHtml', () => {
+  it('returns the response blob', async () => {
+    const blob = new Blob(['<html></html>'], { type: 'text/html' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) } as unknown as Response));
+    expect(await fetchExportHtml('p1')).toBe(blob);
+  });
+
+  it('throws when the response is not ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response));
+    await expect(fetchExportHtml('nope')).rejects.toThrow(/export failed: 404/);
   });
 });
 

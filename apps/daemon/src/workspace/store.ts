@@ -22,7 +22,15 @@ import {
   MANIFEST_FILE,
 } from './paths.js';
 import { buildManifest, manifestToProject, parseManifest, type ProjectManifest } from './manifest.js';
-import { buildArticleHtml, patchBody, blockIdToIndex, splitBlocks, imageBlockMarkdown } from './render.js';
+import {
+  buildArticleHtml,
+  buildSelfContainedHtml,
+  collectImageSrcs,
+  patchBody,
+  blockIdToIndex,
+  splitBlocks,
+  imageBlockMarkdown,
+} from './render.js';
 
 const IMAGE_EXT_BY_TYPE: Record<string, string> = {
   'image/png': 'png',
@@ -61,6 +69,9 @@ export interface ProjectStore {
   addImage(id: string, input: AddImageInput): Promise<{ html: string; name: string } | undefined>;
   /** Read an image file's bytes + content-type, or undefined if unknown/unsafe. */
   readImage(id: string, name: string): Promise<{ bytes: Buffer; contentType: string } | undefined>;
+  /** Render a fully self-contained article (images inlined as data URIs, CSS embedded) for export.
+   *  Returns undefined if the id is unknown/unsafe. */
+  exportHtml(id: string): Promise<string | undefined>;
 }
 
 export interface AddImageInput {
@@ -103,6 +114,22 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
   const root = deps.root ?? projectsRoot();
   const genId = deps.genId ?? (() => createProjectId());
   const now = deps.now ?? (() => new Date());
+
+  async function loadImage(
+    id: string,
+    name: string,
+  ): Promise<{ bytes: Buffer; contentType: string } | undefined> {
+    if (!isSafeProjectId(id) || !isSafeImageName(name)) return undefined;
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    const contentType = IMAGE_TYPE_BY_EXT[ext];
+    if (!contentType) return undefined;
+    try {
+      const bytes = await readFile(join(imagesDir(projectDir(root, id)), name));
+      return { bytes, contentType };
+    } catch {
+      return undefined;
+    }
+  }
 
   return {
     async create({ topic, title, body }) {
@@ -217,16 +244,31 @@ export function createProjectStore(deps: StoreDeps = {}): ProjectStore {
     },
 
     async readImage(id, name) {
-      if (!isSafeProjectId(id) || !isSafeImageName(name)) return undefined;
-      const ext = name.split('.').pop()?.toLowerCase() ?? '';
-      const contentType = IMAGE_TYPE_BY_EXT[ext];
-      if (!contentType) return undefined;
+      return loadImage(id, name);
+    },
+
+    async exportHtml(id) {
+      if (!isSafeProjectId(id)) return undefined;
+      const dir = projectDir(root, id);
+      let body: string;
+      let manifest: ProjectManifest | undefined;
       try {
-        const bytes = await readFile(join(imagesDir(projectDir(root, id)), name));
-        return { bytes, contentType };
+        body = await readFile(bodyPath(dir), 'utf8');
+        manifest = parseManifest(await readFile(manifestPath(dir), 'utf8'));
       } catch {
         return undefined;
       }
+      if (!manifest) return undefined;
+
+      // Pre-resolve every referenced image to a data URI (the renderer's resolver is sync).
+      const dataUris = new Map<string, string>();
+      const prefix = `${IMAGES_DIR}/`;
+      for (const src of collectImageSrcs(body)) {
+        if (dataUris.has(src) || !src.startsWith(prefix)) continue;
+        const img = await loadImage(id, src.slice(prefix.length));
+        if (img) dataUris.set(src, `data:${img.contentType};base64,${img.bytes.toString('base64')}`);
+      }
+      return buildSelfContainedHtml(manifest.title, body, (src) => dataUris.get(src) ?? src);
     },
   };
 }

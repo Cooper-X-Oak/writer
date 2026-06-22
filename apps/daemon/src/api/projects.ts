@@ -81,6 +81,21 @@ export function createProjectsRouter(store: ProjectStore = createProjectStore())
     },
   );
 
+  // Export a fully self-contained article (images inlined as data URIs) as a downloadable file.
+  router.get('/projects/:id/export/html', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    store
+      .exportHtml(id)
+      .then((html) => {
+        if (html == null) {
+          res.status(404).json({ error: 'project not found' });
+          return;
+        }
+        res.type('html').set('Content-Disposition', `attachment; filename="article-${id}.html"`).send(html);
+      })
+      .catch(() => res.status(500).json({ error: 'failed to export article' }));
+  });
+
   // Serve a project image (referenced as images/<name> in the article; the preview rewrites these
   // relative srcs to absolute URLs).
   router.get('/projects/:id/images/:name', (req: Request, res: Response) => {

@@ -18,6 +18,7 @@ describe('getBridge', () => {
       saveImageConfig: () => Promise.resolve(),
       imageConfigStatus: () => Promise.resolve({ configured: false }),
       generateImage: () => Promise.resolve({ html: '', name: '' }),
+      exportPdf: () => Promise.resolve({ saved: false }),
     } as HswBridge;
     const g = globalThis as unknown as G;
     g.window = { ...(g.window ?? {}), hsw: fake };
