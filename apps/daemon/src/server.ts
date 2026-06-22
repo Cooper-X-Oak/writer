@@ -7,6 +7,7 @@ import { logger } from './logger.js';
 import { healthRouter } from './api/health.js';
 import { agentRouter } from './api/agent.js';
 import { writeRouter } from './api/write.js';
+import { projectsRouter } from './api/projects.js';
 
 // Local-first: the daemon is loopback-only, but the Electron renderer / Next dev server is a
 // *different* origin (e.g. http://localhost:3000) calling http://127.0.0.1:4319 — cross-origin.
@@ -31,5 +32,6 @@ export function createServer(): Express {
   app.use('/api', healthRouter);
   app.use('/api', agentRouter);
   app.use('/api', writeRouter);
+  app.use('/api', projectsRouter);
   return app;
 }

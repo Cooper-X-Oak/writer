@@ -11,5 +11,6 @@ export interface WriteRequest {
 export type WriteStreamEvent =
   | { type: 'status'; message: string }
   | { type: 'delta'; text: string }
-  | { type: 'done'; costUsd?: number }
+  // projectId is set when the finished draft was persisted as a project; absent if saving failed.
+  | { type: 'done'; costUsd?: number; projectId?: string }
   | { type: 'error'; message: string };
