@@ -8,6 +8,8 @@ import { randomBytes } from 'node:crypto';
 
 export const MANIFEST_FILE = 'manifest.json';
 export const ARTIFACT_FILE = 'article.html';
+/** Plain-text draft — the editable source of truth; article.html is rendered from it. */
+export const BODY_FILE = 'body.md';
 
 /** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
 export function dataDir(): string {
@@ -28,6 +30,10 @@ export function manifestPath(dir: string): string {
 
 export function artifactPath(dir: string): string {
   return join(dir, ARTIFACT_FILE);
+}
+
+export function bodyPath(dir: string): string {
+  return join(dir, BODY_FILE);
 }
 
 /** Short, time-sortable, collision-resistant id: base36 millis + 8 random hex. Kept short for

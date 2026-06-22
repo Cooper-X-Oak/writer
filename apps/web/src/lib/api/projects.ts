@@ -16,3 +16,15 @@ export async function getArtifact(id: string, signal?: AbortSignal): Promise<str
   if (!res.ok) throw new Error(`load artifact failed: ${res.status}`);
   return res.text();
 }
+
+/** Replace one block's text; returns the re-rendered article HTML. */
+export async function patchBlock(id: string, blockId: string, text: string): Promise<string> {
+  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/block`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ blockId, text }),
+  });
+  if (!res.ok) throw new Error(`patch block failed: ${res.status}`);
+  const body = (await res.json()) as { html?: string };
+  return body.html ?? '';
+}

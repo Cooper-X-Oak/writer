@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
-import { listProjects, getArtifact } from '../lib/api/projects';
+import { listProjects, getArtifact, patchBlock } from '../lib/api/projects';
+import { rewrite } from '../lib/api/rewrite';
 import { ProjectSidebar } from './project-sidebar';
 import { ArticleView } from './article-view';
+import { RewritePanel } from './rewrite-panel';
 
 type Phase = 'idle' | 'running' | 'done' | 'error';
+interface Selection {
+  blockId: string;
+  text: string;
+}
 
 export function WriteStudio() {
   const [topic, setTopic] = useState('');
@@ -17,6 +23,11 @@ export function WriteStudio() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<Project | null>(null);
   const [selectedHtml, setSelectedHtml] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [instruction, setInstruction] = useState('');
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
 
   const running = phase === 'running';
@@ -76,9 +87,17 @@ export function WriteStudio() {
     setStatus('已停止');
   };
 
+  const clearEdit = (): void => {
+    setEditMode(false);
+    setSelection(null);
+    setInstruction('');
+    setRewriteError(undefined);
+  };
+
   const openProject = async (project: Project): Promise<void> => {
     setSelected(project);
     setSelectedHtml(null);
+    clearEdit();
     try {
       setSelectedHtml(await getArtifact(project.id));
     } catch (err: unknown) {
@@ -90,9 +109,32 @@ export function WriteStudio() {
   const newWrite = (): void => {
     setSelected(null);
     setSelectedHtml(null);
+    clearEdit();
     setDraft('');
     setStatus('');
     setPhase('idle');
+  };
+
+  const onSelectBlock = useCallback((blockId: string, text: string): void => {
+    setSelection({ blockId, text });
+    setRewriteError(undefined);
+  }, []);
+
+  const doRewrite = async (): Promise<void> => {
+    if (!selected || !selection || rewriting) return;
+    setRewriting(true);
+    setRewriteError(undefined);
+    try {
+      const newText = await rewrite(selection.text, instruction);
+      const html = await patchBlock(selected.id, selection.blockId, newText);
+      setSelectedHtml(html); // re-render the iframe with the patched article (already persisted)
+      setSelection(null);
+      setInstruction('');
+    } catch (err: unknown) {
+      setRewriteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRewriting(false);
+    }
   };
 
   return (
@@ -109,11 +151,41 @@ export function WriteStudio() {
           <div>
             <header style={styles.viewHeader}>
               <h2 style={styles.viewTitle}>{selected.title}</h2>
-              <button style={styles.btn} onClick={newWrite}>
-                ＋ 新写作
-              </button>
+              <div style={styles.viewActions}>
+                <button
+                  style={{ ...styles.btn, ...styles.ghostBtn, ...(editMode ? styles.editOn : null) }}
+                  onClick={() => {
+                    setEditMode((v) => !v);
+                    setSelection(null);
+                  }}
+                >
+                  {editMode ? '✓ 编辑中' : '编辑'}
+                </button>
+                <button style={styles.btn} onClick={newWrite}>
+                  ＋ 新写作
+                </button>
+              </div>
             </header>
-            {selectedHtml == null ? <p style={styles.status}>加载中…</p> : <ArticleView html={selectedHtml} />}
+            {editMode && !selection && <p style={styles.hint}>点击文章里的任意一段，让 AI 帮你改写。</p>}
+            {selectedHtml == null ? (
+              <p style={styles.status}>加载中…</p>
+            ) : (
+              <ArticleView html={selectedHtml} editMode={editMode} onSelectBlock={onSelectBlock} />
+            )}
+            {selection && (
+              <RewritePanel
+                selectedText={selection.text}
+                instruction={instruction}
+                rewriting={rewriting}
+                error={rewriteError}
+                onInstructionChange={setInstruction}
+                onRewrite={() => void doRewrite()}
+                onCancel={() => {
+                  setSelection(null);
+                  setRewriteError(undefined);
+                }}
+              />
+            )}
           </div>
         ) : (
           <>
@@ -183,6 +255,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stopBtn: { background: '#c0392b' },
   viewHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  viewActions: { display: 'flex', gap: 8 },
+  ghostBtn: { color: '#111', background: '#fff', border: '1px solid #d0d0d0' },
+  editOn: { color: '#fff', background: '#2ecc71', border: '1px solid #2ecc71' },
+  hint: { margin: '0 0 12px', fontSize: 13, color: '#2e8b57' },
   viewTitle: { margin: 0, fontSize: 20, color: '#1a1a1a' },
   status: { marginTop: 12, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 },
   pulse: {

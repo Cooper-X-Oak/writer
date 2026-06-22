@@ -33,7 +33,7 @@ describe('ProjectStore', () => {
 
     const html = await store.readArtifact('p1');
     expect(html).toContain('<h1>远程办公</h1>');
-    expect(html).toContain('<p>正文第一段。</p>');
+    expect(html).toContain('<p data-block="b0">正文第一段。</p>');
   });
 
   it('list() returns saved projects newest-first', async () => {
@@ -71,5 +71,41 @@ describe('ProjectStore', () => {
     expect(await store.readArtifact('nope')).toBeUndefined();
     expect(await store.readArtifact('../../etc/passwd')).toBeUndefined();
     expect(await store.readArtifact('..')).toBeUndefined();
+  });
+
+  it('readBody() returns the editable plain-text source', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'one\n\ntwo' });
+    expect((await store.readBody('p1'))?.trim()).toBe('one\n\ntwo');
+  });
+
+  it('patchBlock() replaces a block, re-renders, and persists both body + artifact', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'first para\n\nsecond para' });
+
+    const result = await store.patchBlock('p1', 'b1', '改写后的第二段');
+    expect(result?.html).toContain('<p data-block="b1">改写后的第二段</p>');
+    expect(result?.html).toContain('<p data-block="b0">first para</p>'); // sibling intact
+
+    // persisted: a fresh read reflects the patch
+    expect(await store.readBody('p1')).toContain('改写后的第二段');
+    expect(await store.readArtifact('p1')).toContain('改写后的第二段');
+  });
+
+  it('patchBlock() escapes the new text (no injection via rewrite)', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'a\n\nb' });
+    const result = await store.patchBlock('p1', 'b0', '<img src=x onerror=alert(1)>');
+    expect(result?.html).not.toContain('<img src=x');
+    expect(result?.html).toContain('&lt;img src=x');
+  });
+
+  it('patchBlock() returns undefined for unknown id, bad blockId, or out-of-range block', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'only one block' });
+    expect(await store.patchBlock('nope', 'b0', 'x')).toBeUndefined();
+    expect(await store.patchBlock('p1', 'title', 'x')).toBeUndefined();
+    expect(await store.patchBlock('p1', 'b9', 'x')).toBeUndefined();
+    expect(await store.patchBlock('../etc', 'b0', 'x')).toBeUndefined();
   });
 });
