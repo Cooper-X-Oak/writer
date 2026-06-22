@@ -29,14 +29,44 @@ export async function fetchExportHtml(id: string, signal?: AbortSignal): Promise
   return res.blob();
 }
 
-/** Replace one block's text; returns the re-rendered article HTML. */
-export async function patchBlock(id: string, blockId: string, text: string): Promise<string> {
-  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/block`, {
+async function postBlockOp(id: string, op: string, payload: Record<string, unknown>): Promise<string> {
+  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/block${op}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ blockId, text }),
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`patch block failed: ${res.status}`);
+  if (!res.ok) throw new Error(`block ${op || 'patch'} failed: ${res.status}`);
   const body = (await res.json()) as { html?: string };
   return body.html ?? '';
+}
+
+/** Replace one block's text (also the manual-edit path); returns the re-rendered article HTML. */
+export async function patchBlock(id: string, blockId: string, text: string): Promise<string> {
+  return postBlockOp(id, '', { blockId, text });
+}
+
+/** Insert a new paragraph after the given block; returns the re-rendered article HTML. */
+export async function insertBlockAfter(id: string, blockId: string, text = ''): Promise<string> {
+  return postBlockOp(id, '/insert', { blockId, text });
+}
+
+/** Delete a block; returns the re-rendered article HTML. */
+export async function deleteBlock(id: string, blockId: string): Promise<string> {
+  return postBlockOp(id, '/delete', { blockId });
+}
+
+/** Move a block up/down; returns the re-rendered article HTML. */
+export async function moveBlock(id: string, blockId: string, direction: 'up' | 'down'): Promise<string> {
+  return postBlockOp(id, '/move', { blockId, direction });
+}
+
+/** Rename the project; returns the re-rendered HTML + the new title. */
+export async function renameTitle(id: string, title: string): Promise<{ html: string; title: string }> {
+  const res = await fetch(`${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/title`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`rename failed: ${res.status}`);
+  return (await res.json()) as { html: string; title: string };
 }

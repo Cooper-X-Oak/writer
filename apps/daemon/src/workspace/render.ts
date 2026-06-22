@@ -40,6 +40,38 @@ export function patchBody(body: string, index: number, newText: string): string 
   return next.join('\n\n');
 }
 
+// Structural transforms. NOTE: data-block ids are POSITIONAL (bN = current array index), so each of
+// these deliberately renumbers every block at/after the edit point. Callers re-render and the client
+// re-tags from the fresh HTML; a cached blockId is stale after any of these. All immutable + bounds-
+// checked (out-of-range → unchanged), mirroring patchBody.
+
+/** Insert a new paragraph immediately AFTER the block at `index`. */
+export function insertBlockAfter(body: string, index: number, text: string): string {
+  const blocks = splitBlocks(body);
+  if (index < 0 || index >= blocks.length) return body;
+  const next = [...blocks];
+  next.splice(index + 1, 0, text.trim());
+  return next.join('\n\n');
+}
+
+/** Delete the block at `index`. Refuses to empty the article (last block → unchanged). */
+export function deleteBlock(body: string, index: number): string {
+  const blocks = splitBlocks(body);
+  if (index < 0 || index >= blocks.length) return body;
+  if (blocks.length <= 1) return body; // never leave an empty/unrenderable article
+  return blocks.filter((_, i) => i !== index).join('\n\n');
+}
+
+/** Move the block at `from` to position `to`. Out-of-range/no-op `to` → unchanged. */
+export function moveBlock(body: string, from: number, to: number): string {
+  const blocks = splitBlocks(body);
+  if (from < 0 || from >= blocks.length || to < 0 || to >= blocks.length || from === to) return body;
+  const next = [...blocks];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved as string);
+  return next.join('\n\n');
+}
+
 // A block that is exactly a markdown image — `![alt](src)` — renders as <img> instead of <p>.
 const IMAGE_BLOCK = /^!\[([^\]]*)\]\(([^)]+)\)$/;
 

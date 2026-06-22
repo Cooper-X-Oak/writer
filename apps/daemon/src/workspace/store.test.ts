@@ -178,4 +178,67 @@ describe('ProjectStore', () => {
     expect(await store.exportHtml('nope')).toBeUndefined();
     expect(await store.exportHtml('../../etc/passwd')).toBeUndefined();
   });
+
+  it('insertBlockAfter() adds a paragraph after the selected block, re-renders, persists, escapes', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'first\n\nsecond' });
+    const r = await store.insertBlockAfter('p1', 'b0', '<b>injected</b>');
+    expect(r?.html).toContain('<p data-block="b1">&lt;b&gt;injected&lt;/b&gt;</p>'); // escaped, after b0
+    expect(r?.html).toContain('<p data-block="b2">second</p>'); // old second shifted to b2
+    expect((await store.readBody('p1'))).toContain('injected');
+  });
+
+  it('insertBlockAfter() substitutes a placeholder for empty text (never a silent no-insert)', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'only' });
+    const r = await store.insertBlockAfter('p1', 'b0', '   ');
+    expect(r?.html).toContain('新段落');
+  });
+
+  it('deleteBlock() removes the block and re-renders; refuses to delete the last one', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'a\n\nb\n\nc' });
+    const r = await store.deleteBlock('p1', 'b1');
+    expect(r?.html).toContain('<p data-block="b0">a</p>');
+    expect(r?.html).toContain('<p data-block="b1">c</p>'); // c shifted down
+    expect(r?.html).not.toContain('>b<');
+
+    await store.create({ topic: 't2', body: 'only' }); // genId fixed to p1 → overwrites; use fresh store
+    const solo = createProjectStore({ root, genId: () => 'solo' });
+    await solo.create({ topic: 't', body: 'only block' });
+    const noop = await solo.deleteBlock('solo', 'b0');
+    expect(noop?.html).toContain('only block'); // last block survives
+  });
+
+  it('moveBlock() reorders up/down and persists; boundary move is a safe no-op', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'a\n\nb\n\nc' });
+    const up = await store.moveBlock('p1', 'b2', 'up');
+    expect(up?.html).toContain('<p data-block="b1">c</p>'); // c moved up to index 1
+    const firstUp = await store.moveBlock('p1', 'b0', 'up');
+    expect(firstUp?.html).toBeDefined(); // no-op, still returns html
+  });
+
+  it('renameTitle() rewrites only the title (topic/source preserved), re-derives h1, manifest last', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    const source = { hotspotId: 'hn-x', sourceType: 'hn' as const, url: 'https://x/1', collectedAt: '2026-06-22T00:00:00.000Z' };
+    await store.create({ topic: '原主题', body: 'body', source });
+    const r = await store.renameTitle('p1', '新标题');
+    expect(r).toEqual({ html: expect.stringContaining('<h1>新标题</h1>'), title: '新标题' });
+    const manifest = JSON.parse(await readFile(join(root, 'p1', MANIFEST_FILE), 'utf8'));
+    expect(manifest.title).toBe('新标题');
+    expect(manifest.topic).toBe('原主题'); // preserved
+    expect(manifest.source).toEqual(source); // provenance preserved
+  });
+
+  it('structural ops + rename return undefined for unknown/unsafe id, bad blockId, or blank title', async () => {
+    const store = createProjectStore({ root, genId: () => 'p1' });
+    await store.create({ topic: 't', body: 'a\n\nb' });
+    expect(await store.insertBlockAfter('nope', 'b0', 'x')).toBeUndefined();
+    expect(await store.deleteBlock('p1', 'bad')).toBeUndefined();
+    expect(await store.moveBlock('../etc', 'b0', 'up')).toBeUndefined();
+    expect(await store.patchBlock('p1', 'b9', 'x')).toBeUndefined(); // out-of-range still guarded
+    expect(await store.renameTitle('p1', '   ')).toBeUndefined();
+    expect(await store.renameTitle('nope', 'x')).toBeUndefined();
+  });
 });

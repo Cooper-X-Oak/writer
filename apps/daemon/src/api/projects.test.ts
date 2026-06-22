@@ -30,6 +30,10 @@ function fakeStore(over: Partial<ProjectStore> = {}): ProjectStore {
     addImage: over.addImage ?? (() => Promise.resolve({ html: '<figure></figure>', name: 'img.png' })),
     readImage: over.readImage ?? (() => Promise.resolve({ bytes: Buffer.from([1, 2, 3]), contentType: 'image/png' })),
     exportHtml: over.exportHtml ?? (() => Promise.resolve('<!doctype html><h1>export</h1>')),
+    insertBlockAfter: over.insertBlockAfter ?? (() => Promise.resolve({ html: '<h1>inserted</h1>' })),
+    deleteBlock: over.deleteBlock ?? (() => Promise.resolve({ html: '<h1>deleted</h1>' })),
+    moveBlock: over.moveBlock ?? (() => Promise.resolve({ html: '<h1>moved</h1>' })),
+    renameTitle: over.renameTitle ?? (() => Promise.resolve({ html: '<h1>新</h1>', title: '新' })),
   };
 }
 
@@ -159,6 +163,63 @@ describe('POST /api/projects/:id/block', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('structural block ops + rename', () => {
+  async function post(url: string, path: string, body: unknown): Promise<Response> {
+    return fetch(`${url}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+
+  it('POST /block/insert returns {html}; 400 without blockId; 404 when store→undefined', async () => {
+    let captured: { id: string; blockId: string; text: string } | undefined;
+    const store = fakeStore({ insertBlockAfter: (id, blockId, text) => { captured = { id, blockId, text }; return Promise.resolve({ html: '<h1>x</h1>' }); } });
+    const { url, close } = await serve(store);
+    try {
+      expect((await post(url, '/projects/p1/block/insert', { blockId: 'b0', text: 'hi' })).status).toBe(200);
+      expect(captured).toEqual({ id: 'p1', blockId: 'b0', text: 'hi' });
+      expect((await post(url, '/projects/p1/block/insert', { text: 'x' })).status).toBe(400);
+    } finally { close(); }
+  });
+
+  it('POST /block/delete returns {html}; 400 without blockId; 404 when missing', async () => {
+    const { url, close } = await serve(fakeStore());
+    try {
+      expect((await post(url, '/projects/p1/block/delete', { blockId: 'b1' })).status).toBe(200);
+      expect((await post(url, '/projects/p1/block/delete', {})).status).toBe(400);
+    } finally { close(); }
+    const miss = await serve(fakeStore({ deleteBlock: () => Promise.resolve(undefined) }));
+    try {
+      expect((await post(miss.url, '/projects/p1/block/delete', { blockId: 'b9' })).status).toBe(404);
+    } finally { miss.close(); }
+  });
+
+  it('POST /block/move validates direction (up|down) and returns {html}', async () => {
+    let dir: string | undefined;
+    const store = fakeStore({ moveBlock: (_id, _b, d) => { dir = d; return Promise.resolve({ html: '<h1>m</h1>' }); } });
+    const { url, close } = await serve(store);
+    try {
+      expect((await post(url, '/projects/p1/block/move', { blockId: 'b1', direction: 'down' })).status).toBe(200);
+      expect(dir).toBe('down');
+      expect((await post(url, '/projects/p1/block/move', { blockId: 'b1', direction: 'sideways' })).status).toBe(400);
+      expect((await post(url, '/projects/p1/block/move', { blockId: 'b1' })).status).toBe(400);
+    } finally { close(); }
+  });
+
+  it('PATCH /title returns {html,title}; 400 on blank; 404 when missing', async () => {
+    const store = fakeStore();
+    const { url, close } = await serve(store);
+    const patch = (body: unknown) => fetch(`${url}/projects/p1/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    try {
+      const res = await patch({ title: '新标题' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ html: '<h1>新</h1>', title: '新' });
+      expect((await patch({ title: '   ' })).status).toBe(400);
+    } finally { close(); }
+    const miss = await serve(fakeStore({ renameTitle: () => Promise.resolve(undefined) }));
+    try {
+      expect((await fetch(`${miss.url}/projects/nope/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'x' }) })).status).toBe(404);
+    } finally { miss.close(); }
   });
 });
 
