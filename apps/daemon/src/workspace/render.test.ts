@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, buildArticleHtml, splitBlocks, blockIdToIndex, patchBody } from './render.js';
+import { escapeHtml, buildArticleHtml, splitBlocks, blockIdToIndex, patchBody, imageBlockMarkdown } from './render.js';
 
 describe('escapeHtml', () => {
   it('escapes the five HTML-significant characters', () => {
@@ -57,5 +57,26 @@ describe('buildArticleHtml', () => {
   it('escapes a hostile title too', () => {
     const html = buildArticleHtml('</title><script>x</script>', 'body');
     expect(html).not.toContain('<script>x</script>');
+  });
+
+  it('renders an image block as <figure><img> instead of <p>', () => {
+    const html = buildArticleHtml('t', 'para one\n\n![一张配图](images/abc.png)');
+    expect(html).toContain('<figure data-block="b1"><img src="images/abc.png" alt="一张配图" loading="lazy"/></figure>');
+    expect(html).toContain('<p data-block="b0">para one</p>');
+  });
+
+  it('escapes alt/src in an image block', () => {
+    const html = buildArticleHtml('t', '![a"><script>x</script>](images/x.png)');
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).toContain('&quot;');
+  });
+});
+
+describe('imageBlockMarkdown', () => {
+  it('builds a markdown image block', () => {
+    expect(imageBlockMarkdown('images/a.png', '配图')).toBe('![配图](images/a.png)');
+  });
+  it('strips chars that would break the block shape', () => {
+    expect(imageBlockMarkdown('images/a.png', 'a]b[c\nd')).toBe('![a b c d](images/a.png)');
   });
 });

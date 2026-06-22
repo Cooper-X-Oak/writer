@@ -10,6 +10,8 @@ export const MANIFEST_FILE = 'manifest.json';
 export const ARTIFACT_FILE = 'article.html';
 /** Plain-text draft — the editable source of truth; article.html is rendered from it. */
 export const BODY_FILE = 'body.md';
+/** Per-project subdirectory holding generated illustration files. */
+export const IMAGES_DIR = 'images';
 
 /** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
 export function dataDir(): string {
@@ -34,6 +36,15 @@ export function artifactPath(dir: string): string {
 
 export function bodyPath(dir: string): string {
   return join(dir, BODY_FILE);
+}
+
+export function imagesDir(dir: string): string {
+  return join(dir, IMAGES_DIR);
+}
+
+/** An image filename only ever names one path segment under images/. Reject traversal/separators. */
+export function isSafeImageName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..';
 }
 
 /** Short, time-sortable, collision-resistant id: base36 millis + 8 random hex. Kept short for

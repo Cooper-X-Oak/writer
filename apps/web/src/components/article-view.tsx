@@ -7,13 +7,15 @@ interface ArticleViewProps {
   html: string;
   /** Enable hover-outline + click-to-select of [data-block] paragraphs. */
   editMode?: boolean;
+  /** Base URL for resolving the article's relative image srcs inside the sandboxed iframe. */
+  imageBaseUrl?: string;
   onSelectBlock?: (blockId: string, text: string) => void;
 }
 
 /** Sandboxed preview. sandbox="allow-scripts" runs the bridge but withholds allow-same-origin, so
  *  the frame can't reach the parent origin/cookies — the security boundary. The parent only trusts
  *  messages whose event.source IS this iframe's window (see isPreviewSelect). */
-export function ArticleView({ html, editMode = false, onSelectBlock }: ArticleViewProps) {
+export function ArticleView({ html, editMode = false, imageBaseUrl, onSelectBlock }: ArticleViewProps) {
   const ref = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export function ArticleView({ html, editMode = false, onSelectBlock }: ArticleVi
     <iframe
       ref={ref}
       title="文章预览"
-      srcDoc={buildPreviewSrcDoc(html, editMode)}
+      srcDoc={buildPreviewSrcDoc(html, editMode, imageBaseUrl)}
       sandbox="allow-scripts"
       style={styles.frame}
     />

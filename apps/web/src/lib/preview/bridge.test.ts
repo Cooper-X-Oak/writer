@@ -23,6 +23,18 @@ describe('buildPreviewSrcDoc', () => {
     expect(out).toContain('<script>');
     expect(out.startsWith('<p>x</p>')).toBe(true);
   });
+
+  it('rewrites relative image srcs to absolute when an imageBaseUrl is given', () => {
+    const html = '<body><figure><img src="images/abc.png" alt="x"/></figure></body>';
+    const out = buildPreviewSrcDoc(html, false, 'http://127.0.0.1:4319/api/projects/p1/');
+    expect(out).toContain('src="http://127.0.0.1:4319/api/projects/p1/images/abc.png"');
+    expect(out).not.toContain('src="images/abc.png"');
+  });
+
+  it('leaves image srcs untouched when no imageBaseUrl is given', () => {
+    const html = '<body><img src="images/abc.png"/></body>';
+    expect(buildPreviewSrcDoc(html, false)).toContain('src="images/abc.png"');
+  });
 });
 
 describe('isPreviewSelect (parent-side trust guard)', () => {

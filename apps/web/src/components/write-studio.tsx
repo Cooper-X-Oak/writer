@@ -5,9 +5,11 @@ import type { Project } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
 import { listProjects, getArtifact, patchBlock } from '../lib/api/projects';
 import { rewrite } from '../lib/api/rewrite';
+import { projectImageBase } from '../lib/api/base';
 import { ProjectSidebar } from './project-sidebar';
 import { ArticleView } from './article-view';
 import { RewritePanel } from './rewrite-panel';
+import { ImagePanel } from './image-panel';
 
 type Phase = 'idle' | 'running' | 'done' | 'error';
 interface Selection {
@@ -170,8 +172,14 @@ export function WriteStudio() {
             {selectedHtml == null ? (
               <p style={styles.status}>加载中…</p>
             ) : (
-              <ArticleView html={selectedHtml} editMode={editMode} onSelectBlock={onSelectBlock} />
+              <ArticleView
+                html={selectedHtml}
+                editMode={editMode}
+                imageBaseUrl={projectImageBase(selected.id)}
+                onSelectBlock={onSelectBlock}
+              />
             )}
+            {!selection && <ImagePanel projectId={selected.id} title={selected.title} onGenerated={setSelectedHtml} />}
             {selection && (
               <RewritePanel
                 selectedText={selection.text}
