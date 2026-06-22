@@ -4,3 +4,8 @@ export const DAEMON_URL = process.env.NEXT_PUBLIC_DAEMON_URL ?? 'http://127.0.0.
 export function projectImageBase(id: string): string {
   return `${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/`;
 }
+
+/** Base URL for a project's material-card image bytes (资料区 images). */
+export function materialImageBase(id: string): string {
+  return `${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/materials/images/`;
+}

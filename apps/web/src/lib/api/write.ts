@@ -14,11 +14,12 @@ export async function streamWrite(
   handlers: WriteHandlers,
   signal?: AbortSignal,
   source?: WriteSource,
+  projectId?: string,
 ): Promise<void> {
   const res = await fetch(`${DAEMON_URL}/api/agent/write`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(source ? { topic, source } : { topic }),
+    body: JSON.stringify({ topic, ...(source ? { source } : {}), ...(projectId ? { projectId } : {}) }),
     signal,
   });
   if (!res.ok || !res.body) {
