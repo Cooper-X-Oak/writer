@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project, Hotspot, MaterialCard } from '@app/contracts';
 import { streamWrite } from '../lib/api/write';
 import {
-  createCorpusProject,
   listMaterials,
   addLinkCard,
   addTextCard,
@@ -14,7 +13,9 @@ import {
   removeCard,
   runInquiry,
 } from '../lib/api/corpus';
+import { openCase } from '../lib/api/cases';
 import { CorpusSidebar } from './corpus-sidebar';
+import { OpenCaseDialog } from './open-case-dialog';
 import {
   listProjects,
   getArtifact,
@@ -29,7 +30,8 @@ import {
 import { rewrite } from '../lib/api/rewrite';
 import { useHotspots } from '../hooks/useHotspots';
 import { useFeeds } from '../hooks/useFeeds';
-import { projectImageBase } from '../lib/api/base';
+import { useInbox } from '../hooks/useInbox';
+import { projectImageBase, materialImageBase, inboxImageBase } from '../lib/api/base';
 import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
 import { HotspotSidebar } from './hotspot-sidebar';
@@ -72,12 +74,14 @@ export function WriteStudio() {
   const [corpusBusy, setCorpusBusy] = useState(false);
   const [useAgentInquiry, setUseAgentInquiry] = useState(false);
   const [inquiringId, setInquiringId] = useState<string | null>(null);
+  const [caseDialogOpen, setCaseDialogOpen] = useState(false);
+  const [casePending, setCasePending] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-  const corpusCreatingRef = useRef<Promise<string | undefined> | null>(null);
 
-  // Global feeds (hotspot wall + RSS) — extracted to hooks (A4). Behavior unchanged.
+  // Global feeds (hotspot wall + RSS) + the global inbox (planning-desk staging) — hooks (A4/A5).
   const hot = useHotspots();
   const feedsCtl = useFeeds(setStatus);
+  const inbox = useInbox(setStatus);
 
   const running = phase === 'running';
 
@@ -139,43 +143,27 @@ export function WriteStudio() {
     }
   };
 
-  // New piece — it starts as a corpus (gather material first), then open it.
-  const createNewCorpus = async (): Promise<void> => {
+  // Open a 案卷 (立项) — the explicit, NAMED commit. The phantom is dead: a project dir is created
+  // ONLY here (via the title-guarded POST /api/cases), never eagerly on a drop or ＋新建.
+  const openNewCase = async (title: string, angle?: string): Promise<void> => {
+    setCasePending(true);
     try {
-      const project = await createCorpusProject();
+      const project = await openCase(title, angle);
       setProjects(await listProjects());
+      setCaseDialogOpen(false);
       await openProject(project);
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCasePending(false);
     }
   };
 
-  // Ensure there is an open project to ingest into; create a corpus on the fly if none. A ref
-  // de-dupes concurrent first-drops (stale `selected` would otherwise create two corpus projects).
-  const ensureCorpus = async (): Promise<string | undefined> => {
-    if (selected) return selected.id;
-    if (corpusCreatingRef.current) return corpusCreatingRef.current;
-    const pending = (async (): Promise<string | undefined> => {
-      try {
-        const project = await createCorpusProject();
-        setProjects(await listProjects());
-        await openProject(project);
-        return project.id;
-      } catch (err: unknown) {
-        setStatus(err instanceof Error ? err.message : String(err));
-        return undefined;
-      }
-    })().finally(() => {
-      corpusCreatingRef.current = null;
-    });
-    corpusCreatingRef.current = pending;
-    return pending;
-  };
-
-  // Material ingest — add to the open project's corpus, then reconcile the card list.
+  // Material ingest into the OPEN project's corpus. With no open project the drop handlers target the
+  // inbox instead (wired in the render) — so dropping material never silently creates a project.
   const ingest = async (add: (projectId: string) => Promise<unknown>): Promise<void> => {
-    const projectId = await ensureCorpus();
-    if (!projectId) return;
+    if (!selected) return;
+    const projectId = selected.id;
     setCorpusBusy(true);
     try {
       await add(projectId);
@@ -397,16 +385,20 @@ export function WriteStudio() {
         projects={projects}
         selectedId={selected?.id ?? null}
         onSelect={(p) => void openProject(p)}
-        onNew={() => void createNewCorpus()}
+        onNew={() => setCaseDialogOpen(true)}
         onDelete={(p) => void doDeleteProject(p)}
       />
 
       <div style={styles.main}>
         {!selected ? (
           <div style={styles.landing}>
-            <p style={styles.landingText}>点「＋ 新建」开一篇 —— 先攒素材（拖 / 贴，或从右侧热点「选中加入」），再写作。</p>
-            <button style={styles.btn} onClick={() => void createNewCorpus()}>
-              ＋ 新建
+            <h2 style={styles.viewTitle}>策划台</h2>
+            <p style={styles.landingText}>
+              先收集，再写作。把 链接 / 文本 / 图片 / 代码 丢进右侧「收件箱」暂存，或从热点「选中加入」 ——
+              不立项、不归属任何篇。攒得差不多了，「＋ 开案卷」把素材拣进一篇案卷，开始攒料 → 询证 → 写作。
+            </p>
+            <button style={styles.btn} onClick={() => setCaseDialogOpen(true)}>
+              ＋ 开案卷
             </button>
           </div>
         ) : selected.stage === 'corpus' ? (
@@ -420,7 +412,7 @@ export function WriteStudio() {
                 >
                   删除
                 </button>
-                <button style={styles.btn} onClick={() => void createNewCorpus()}>
+                <button style={styles.btn} onClick={() => setCaseDialogOpen(true)}>
                   ＋ 新建
                 </button>
               </div>
@@ -521,7 +513,7 @@ export function WriteStudio() {
                 >
                   删除
                 </button>
-                <button style={styles.btn} onClick={() => void createNewCorpus()}>
+                <button style={styles.btn} onClick={() => setCaseDialogOpen(true)}>
                   ＋ 新建
                 </button>
               </div>
@@ -580,34 +572,60 @@ export function WriteStudio() {
         )}
       </div>
 
-      <CorpusSidebar
-        projectId={selected?.id ?? null}
-        cards={cards}
-        busy={corpusBusy}
-        onUrl={onAddUrl}
-        onText={onAddText}
-        onImage={onAddImageFile}
-        onRemove={onRemoveCard}
-        onInquire={(id) => void inquireFor(id)}
-        inquiringId={inquiringId}
-        useAgent={useAgentInquiry}
-        onToggleAgent={setUseAgentInquiry}
-      >
-        <HotspotSidebar
-          hotspots={hot.hotspots}
-          refreshing={hot.refreshing}
-          onSelect={onAddHotspot}
-          onRefresh={() => void hot.refresh()}
-          onDismiss={(h) => void hot.dismiss(h)}
+      {selected ? (
+        <CorpusSidebar
+          variant="corpus"
+          cards={cards}
+          imageBase={materialImageBase(selected.id)}
+          busy={corpusBusy}
+          onUrl={onAddUrl}
+          onText={onAddText}
+          onImage={onAddImageFile}
+          onRemove={onRemoveCard}
+          onInquire={(id) => void inquireFor(id)}
+          inquiringId={inquiringId}
+          useAgent={useAgentInquiry}
+          onToggleAgent={setUseAgentInquiry}
         >
-          <FeedManager
-            feeds={feedsCtl.feeds}
-            busy={feedsCtl.busy}
-            onAdd={(url) => void feedsCtl.add(url)}
-            onRemove={(url) => void feedsCtl.remove(url)}
-          />
-        </HotspotSidebar>
-      </CorpusSidebar>
+          <HotspotSidebar
+            hotspots={hot.hotspots}
+            refreshing={hot.refreshing}
+            onSelect={onAddHotspot}
+            onRefresh={() => void hot.refresh()}
+            onDismiss={(h) => void hot.dismiss(h)}
+          >
+            <FeedManager feeds={feedsCtl.feeds} busy={feedsCtl.busy} onAdd={(url) => void feedsCtl.add(url)} onRemove={(url) => void feedsCtl.remove(url)} />
+          </HotspotSidebar>
+        </CorpusSidebar>
+      ) : (
+        <CorpusSidebar
+          variant="inbox"
+          cards={inbox.items}
+          imageBase={inboxImageBase()}
+          busy={inbox.busy}
+          onUrl={inbox.addUrl}
+          onText={inbox.addText}
+          onImage={inbox.addImage}
+          onRemove={inbox.remove}
+        >
+          <HotspotSidebar
+            hotspots={hot.hotspots}
+            refreshing={hot.refreshing}
+            onSelect={(h) => void inbox.addHotspot(h.id)}
+            onRefresh={() => void hot.refresh()}
+            onDismiss={(h) => void hot.dismiss(h)}
+          >
+            <FeedManager feeds={feedsCtl.feeds} busy={feedsCtl.busy} onAdd={(url) => void feedsCtl.add(url)} onRemove={(url) => void feedsCtl.remove(url)} />
+          </HotspotSidebar>
+        </CorpusSidebar>
+      )}
+
+      <OpenCaseDialog
+        open={caseDialogOpen}
+        busy={casePending}
+        onConfirm={(title, angle) => void openNewCase(title, angle)}
+        onCancel={() => setCaseDialogOpen(false)}
+      />
     </section>
   );
 }
