@@ -8,14 +8,27 @@ import { DaemonStatus } from '../components/daemon-status';
 
 export default function Home() {
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '32px 28px', color: '#111' }}>
-      <header style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 26, letterSpacing: -0.5 }}>Hotspot Writer</h1>
+    <main className="app-desk grain" style={{ padding: '30px 32px', color: 'var(--ink)' }}>
+      <header style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'baseline', gap: 14 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: 'var(--font-display)',
+            fontSize: 30,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            color: 'var(--ink)',
+          }}
+        >
+          案台<span style={{ fontSize: 15, color: 'var(--ink-muted)', fontWeight: 400, marginLeft: 10 }}>· Hotspot Writer</span>
+        </h1>
         <DaemonStatus />
       </header>
 
-      <AgentGuide />
-      <WriteStudio />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <AgentGuide />
+        <WriteStudio />
+      </div>
     </main>
   );
 }

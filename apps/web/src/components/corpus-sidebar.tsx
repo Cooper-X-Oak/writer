@@ -28,8 +28,8 @@ export function CorpusSidebar({
   projectId, cards, busy, onUrl, onText, onImage, onRemove, onInquire, inquiringId, useAgent, onToggleAgent, children,
 }: CorpusSidebarProps) {
   return (
-    <aside style={styles.aside}>
-      <h2 style={styles.heading}>资料区</h2>
+    <aside className="cork-board grain" style={styles.aside}>
+      <h2 style={styles.heading}>资料区 · 案板</h2>
       {projectId ? (
         <>
           <CorpusDropZone busy={busy} onUrl={onUrl} onText={onText} onImage={onImage} />
@@ -63,10 +63,10 @@ export function CorpusSidebar({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  aside: { width: 280, flexShrink: 0, borderLeft: '1px solid #ececec', paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 10 },
-  heading: { margin: 0, fontSize: 12, letterSpacing: 1, color: '#999', textTransform: 'uppercase' },
-  agentToggle: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666', cursor: 'pointer' },
-  empty: { fontSize: 13, color: '#999', lineHeight: 1.6, margin: 0 },
-  list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 },
-  feeder: { borderTop: '1px solid #f0f0f0', paddingTop: 10, marginTop: 4 },
+  aside: { width: 296, flexShrink: 0, padding: '14px 14px 18px', marginLeft: -6, display: 'flex', flexDirection: 'column', gap: 10 },
+  heading: { position: 'relative', zIndex: 1, margin: 0, fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em', color: 'var(--ink)' },
+  agentToggle: { position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-muted)', cursor: 'pointer' },
+  empty: { position: 'relative', zIndex: 1, fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.6, margin: 0 },
+  list: { position: 'relative', zIndex: 1, listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+  feeder: { position: 'relative', zIndex: 1, borderTop: '1px solid var(--board-cork-2)', paddingTop: 10, marginTop: 4 },
 };

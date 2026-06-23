@@ -1,0 +1,154 @@
+/* 案台 · The Evidence Bench — design system tokens + shell surfaces (P1).
+ * A warm-paper detective's case bench: a felt desk, a cork board for the corpus, paper cards.
+ * Font CSS vars (--font-spectral etc.) are injected by next/font in layout.tsx. CN falls back to a
+ * system Song/Hei face until a self-hosted CN webfont is added. Light-first; dark is a deliberate
+ * toggle (data-theme="dark"), never a reflexive default. */
+
+:root {
+  /* —— three-voice type —— */
+  --font-display: var(--font-spectral), "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  --font-read: var(--font-source-serif), "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  --font-chrome: var(--font-inter), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: var(--font-jb-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --text-h1: clamp(2rem, 1.4rem + 2.4vw, 3.25rem);
+  --text-card: 0.95rem;
+  --text-meta: 0.69rem;
+
+  /* —— desk / cork / paper —— */
+  --desk: oklch(95.5% 0.012 95); /* warm bone felt */
+  --desk-edge: oklch(93% 0.014 90);
+  --board-cork: oklch(92% 0.022 80); /* corpus board */
+  --board-cork-2: oklch(89% 0.026 78);
+  --paper: oklch(98.5% 0.008 95); /* card stock */
+  --paper-2: oklch(95.5% 0.012 92); /* recessed wells (hotspot trough) */
+  --deckle: oklch(86% 0.02 85); /* 1px torn paper edge */
+  --ink: oklch(24% 0.02 60);
+  --ink-muted: oklch(52% 0.015 70);
+  --ink-faint: oklch(66% 0.012 75);
+  --rule: oklch(86% 0.014 80);
+
+  /* —— the one loud accent: red string / wax —— */
+  --string: oklch(54% 0.2 27);
+  --string-soft: oklch(54% 0.2 27 / 0.5);
+
+  /* —— card stocks = 原 / 补 / 对 (paper + edge bar, not chips) —— */
+  --stock-primary: oklch(98% 0.03 92);
+  --edge-primary: oklch(58% 0.14 250); /* 原 ink-blue */
+  --stock-support: oklch(97% 0.025 130);
+  --edge-support: oklch(60% 0.11 150); /* 补 sage */
+  --stock-contrast: oklch(96% 0.045 70);
+  --edge-contrast: oklch(64% 0.16 55); /* 对 amber */
+
+  /* —— cross-verify stance = thread + wax dot —— */
+  --stance-corro: oklch(58% 0.15 150); /* 佐证 green ＋ */
+  --stance-contra: oklch(54% 0.2 27); /* 反驳 red ≠ */
+  --stance-neutral: oklch(60% 0.02 70); /* 相关 gray · */
+
+  /* —— origin —— */
+  --wax: oklch(54% 0.2 27); /* 询证 red wax seal */
+  --graphite: oklch(40% 0.01 70); /* 手工 graphite stamp */
+
+  /* —— depth / motion —— */
+  --lift: 0 1px 2px oklch(24% 0.02 60 / 0.08), 0 6px 16px oklch(24% 0.02 60 / 0.1);
+  --lift-sm: 0 1px 2px oklch(24% 0.02 60 / 0.1);
+  --tilt-max: 1.5deg;
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-card: 220ms;
+  --dur-thread: 320ms;
+
+  --radius: 7px;
+  --measure: 760px; /* article reading measure */
+}
+
+:root[data-theme='dark'] {
+  --desk: oklch(26% 0.015 70);
+  --desk-edge: oklch(23% 0.015 70);
+  --board-cork: oklch(31% 0.02 65);
+  --board-cork-2: oklch(28% 0.022 65);
+  --paper: oklch(34% 0.02 80);
+  --paper-2: oklch(29% 0.02 80);
+  --deckle: oklch(42% 0.02 80);
+  --ink: oklch(90% 0.015 90);
+  --ink-muted: oklch(72% 0.012 85);
+  --ink-faint: oklch(58% 0.012 80);
+  --rule: oklch(40% 0.014 75);
+  --string: oklch(64% 0.2 27);
+  --stock-primary: oklch(36% 0.03 250);
+  --edge-primary: oklch(66% 0.13 250);
+  --stock-support: oklch(35% 0.03 150);
+  --edge-support: oklch(66% 0.11 150);
+  --stock-contrast: oklch(37% 0.04 60);
+  --edge-contrast: oklch(70% 0.15 60);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--desk);
+  color: var(--ink);
+  font-family: var(--font-chrome);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--edge-primary);
+}
+
+/* —— grain: one subtle fractal-noise layer (≤4%), shared by felt + cork —— */
+.grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* —— the desk: warm felt the whole app sits on —— */
+.app-desk {
+  position: relative;
+  min-height: 100vh;
+  background-color: var(--desk);
+}
+
+/* Lift real content above the absolutely-positioned grain layer (z-index:0) without per-element work. */
+.app-desk > *,
+.cork-board > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* —— the corpus cork board: warmer, textured, sits ON TOP of the felt —— */
+.cork-board {
+  position: relative;
+  background-color: var(--board-cork);
+  background-image: radial-gradient(oklch(50% 0.04 70 / 0.06) 0.5px, transparent 0.5px);
+  background-size: 7px 7px;
+  border-radius: var(--radius);
+  box-shadow: var(--lift);
+}
+
+/* —— project rail: a stack of file-folder edges —— */
+.folder-rail {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
