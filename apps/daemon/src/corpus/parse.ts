@@ -5,13 +5,14 @@
 // scheme-only check in provenance.ts. A link card with an unfetchable url is dropped whole; a
 // non-link card with a bad source.url keeps the card but drops the source.
 
-import type { MaterialCard, CardKind, CardOrigin, CardClass, CardSource } from '@app/contracts';
+import type { MaterialCard, CardKind, CardOrigin, CardClass, CardStance, CardSource } from '@app/contracts';
 import { isFetchableUrl } from '../collect/fetch-util.js';
 import { isSafeImageName } from '../workspace/paths.js';
 
 const KINDS = new Set<CardKind>(['link', 'image', 'md', 'text', 'code']);
 const ORIGINS = new Set<CardOrigin>(['auto', 'manual']);
 const CLASSES = new Set<CardClass>(['原始', '补充', '对比']);
+const STANCES = new Set<CardStance>(['corroborate', 'contradict', 'neutral']);
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 function clamp01(n: unknown): number {
@@ -47,6 +48,8 @@ export function parseCard(raw: unknown): MaterialCard | undefined {
   const c = content as Record<string, unknown>;
 
   const source = parseSource(o.source);
+  const relatedTo = strArray(o.relatedTo);
+  const stance = typeof o.stance === 'string' && STANCES.has(o.stance as CardStance) ? (o.stance as CardStance) : undefined;
   const base = {
     id: o.id,
     origin: o.origin as CardOrigin,
@@ -56,6 +59,8 @@ export function parseCard(raw: unknown): MaterialCard | undefined {
     note: typeof o.note === 'string' ? o.note : '',
     addedAt: o.addedAt,
     ...(source ? { source } : {}),
+    ...(relatedTo.length > 0 ? { relatedTo } : {}),
+    ...(stance ? { stance } : {}),
   };
 
   switch (o.kind as CardKind) {

@@ -44,6 +44,21 @@ const fakeHotspotStore: HotspotStore = {
   save: () => Promise.resolve(),
 };
 
+function hs(over: Partial<Hotspot>): Hotspot {
+  return { id: 'h', sourceType: 'hn', title: 't', url: 'https://x.com/h', excerpt: '', publishedAt: null, fetchedAt: 'now', score: 0.5, ...over };
+}
+// A seed about "Rust async runtime" plus two overlapping candidates and one unrelated.
+const INQUIRY_SNAPSHOT: Hotspot[] = [
+  hs({ id: 'seed', title: 'Rust async runtime', url: 'https://seed.com/x' }),
+  hs({ id: 'm1', title: 'New Rust async scheduler', url: 'https://a.com/1' }),
+  hs({ id: 'm2', title: 'async runtime internals in Rust', url: 'https://b.com/2' }),
+  hs({ id: 'pasta', title: 'best pasta recipe', url: 'https://c.com/3' }),
+];
+const inquiryHotspotStore: HotspotStore = {
+  read: () => Promise.resolve({ collectedAt: 'now', hotspots: INQUIRY_SNAPSHOT }),
+  save: () => Promise.resolve(),
+};
+
 const json = (method: string, url: string, body: unknown) =>
   fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -100,6 +115,86 @@ describe('materials CRUD', () => {
 
       expect((await json('POST', `${url}/projects/c1/materials/from-hotspot`, { hotspotId: 'nope' })).status).toBe(404);
       expect((await json('POST', `${url}/projects/c1/materials/from-hotspot`, {})).status).toBe(400);
+    } finally { close(); }
+  });
+});
+
+interface InquiryResp { added: MaterialCard[]; skipped: { url: string; reason: string }[]; usedAgent: boolean }
+
+describe('POST /api/projects/:id/inquiry', () => {
+  it('gathers neutral 补充 evidence for a hotspot seed (rule tier, no agent)', async () => {
+    const { url, close } = await serve({ store: memMaterials(), hotspotStore: inquiryHotspotStore });
+    try {
+      const res = await json('POST', `${url}/projects/c1/inquiry`, { hotspotId: 'seed' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as InquiryResp;
+      expect(body.usedAgent).toBe(false);
+      const ids = body.added.map((c) => c.id).sort();
+      expect(ids).toEqual(['hs_m1', 'hs_m2']); // overlapping, not the seed, not pasta
+      expect(body.added.every((c) => c.origin === 'auto' && c.klass === '补充' && c.relatedTo?.[0] === 'seed')).toBe(true);
+    } finally { close(); }
+  });
+
+  it('accepts a seedCardId already in the corpus and excludes it from its own candidates', async () => {
+    const seedCard: MaterialCard = {
+      id: 'card-seed', kind: 'text', origin: 'manual', klass: '原始', confidence: 1, tags: [], note: '',
+      addedAt: 'now', content: { body: 'Rust async runtime deep dive' },
+    };
+    const { url, close } = await serve({ store: memMaterials([seedCard]), hotspotStore: inquiryHotspotStore });
+    try {
+      const res = await json('POST', `${url}/projects/c1/inquiry`, { seedCardId: 'card-seed' });
+      const body = (await res.json()) as InquiryResp;
+      expect(body.added.map((c) => c.id).sort()).toEqual(['hs_m1', 'hs_m2', 'hs_seed']);
+    } finally { close(); }
+  });
+
+  it('applies an injected agent classifier when useAgent is set', async () => {
+    const classifier = {
+      classify: (_seed: unknown, cands: { hotspot: Hotspot }[]) =>
+        Promise.resolve(cands.map((_c, i) => ({ index: i, klass: '对比' as const, stance: 'contradict' as const, confidence: 0.9, note: '反驳' }))),
+    };
+    const { url, close } = await serve({ store: memMaterials(), hotspotStore: inquiryHotspotStore, classifier });
+    try {
+      const res = await json('POST', `${url}/projects/c1/inquiry`, { hotspotId: 'seed', useAgent: true });
+      const body = (await res.json()) as InquiryResp;
+      expect(body.usedAgent).toBe(true);
+      expect(body.added.every((c) => c.klass === '对比' && c.stance === 'contradict')).toBe(true);
+    } finally { close(); }
+  });
+
+  it('accepts a free query as the seed (no relatedTo back-link)', async () => {
+    const { url, close } = await serve({ store: memMaterials(), hotspotStore: inquiryHotspotStore });
+    try {
+      const res = await json('POST', `${url}/projects/c1/inquiry`, { query: 'Rust async runtime' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as InquiryResp;
+      expect(body.added.map((c) => c.id).sort()).toEqual(['hs_m1', 'hs_m2', 'hs_seed']);
+      expect(body.added.every((c) => c.relatedTo === undefined)).toBe(true); // query seed → no back-link
+    } finally { close(); }
+  });
+
+  it('200 with empty added when a valid seed yields no overlapping candidates', async () => {
+    const { url, close } = await serve({ store: memMaterials(), hotspotStore: inquiryHotspotStore });
+    try {
+      const res = await json('POST', `${url}/projects/c1/inquiry`, { query: 'sourdough baking' });
+      expect(res.status).toBe(200);
+      expect((await res.json()) as InquiryResp).toEqual({ added: [], skipped: [], usedAgent: false });
+    } finally { close(); }
+  });
+
+  it('400 without a valid seed; 400 for an unknown hotspot seed', async () => {
+    const { url, close } = await serve({ store: memMaterials(), hotspotStore: inquiryHotspotStore });
+    try {
+      expect((await json('POST', `${url}/projects/c1/inquiry`, {})).status).toBe(400);
+      expect((await json('POST', `${url}/projects/c1/inquiry`, { hotspotId: 'ghost' })).status).toBe(400);
+    } finally { close(); }
+  });
+
+  it('404 when candidates exist but the project is missing (addCard rejects all)', async () => {
+    const missing: MaterialsStore = { ...memMaterials(), addCard: () => Promise.resolve(undefined) };
+    const { url, close } = await serve({ store: missing, hotspotStore: inquiryHotspotStore });
+    try {
+      expect((await json('POST', `${url}/projects/c1/inquiry`, { hotspotId: 'seed' })).status).toBe(404);
     } finally { close(); }
   });
 });

@@ -51,6 +51,15 @@ describe('parseCard', () => {
     expect(parseCard({ id: 'c', kind: 'code', origin: 'manual', klass: '对比', confidence: -1, tags: 'nope', note: '', addedAt: 'n', content: { snippet: 'x', language: 'ts' } }))
       .toMatchObject({ kind: 'code', confidence: 0, tags: [] });
   });
+
+  it('keeps W2 relatedTo (string[]) + a valid stance, and drops a bad stance', () => {
+    const c = parseCard({ ...linkRaw, origin: 'auto', klass: '补充', relatedTo: ['seed', 2, 'x2'], stance: 'contradict' });
+    expect(c?.relatedTo).toEqual(['seed', 'x2']); // non-strings coerced out
+    expect(c?.stance).toBe('contradict');
+    const bad = parseCard({ ...linkRaw, relatedTo: 'nope', stance: 'sideways' });
+    expect(bad?.relatedTo).toBeUndefined(); // empty → omitted
+    expect(bad?.stance).toBeUndefined();
+  });
 });
 
 describe('parseCards', () => {
