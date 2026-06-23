@@ -3,11 +3,11 @@
 import type { CSSProperties } from 'react';
 import type { MaterialCard, CardStance } from '@app/contracts';
 import { hostnameOf } from '../lib/format/provenance';
-import { materialImageBase } from '../lib/api/base';
 
 interface MaterialCardViewProps {
   card: MaterialCard;
-  projectId: string;
+  /** Base URL for image bytes — a project's materials-images or the global inbox-images. */
+  imageBase: string;
   onRemove: (id: string) => void;
   /** Gather 补充/对比 evidence for this card as the seed (W2 询证). Omit to hide the action. */
   onInquire?: (id: string) => void;
@@ -35,7 +35,7 @@ function tiltOf(id: string): number {
 /** One material card on the 资料区 cork board, rendered as a pinned EXHIBIT SLIP. Stock + binding edge
  *  encode 原/补/对; origin is a wax (询证) or graphite (手工) seal; stance is a thread tab + sigil;
  *  confidence a graphite numeral. User content is React text (auto-escaped) — never innerHTML. */
-export function MaterialCardView({ card, projectId, onRemove, onInquire, inquiring }: MaterialCardViewProps) {
+export function MaterialCardView({ card, imageBase, onRemove, onInquire, inquiring }: MaterialCardViewProps) {
   const isAuto = card.origin === 'auto';
   const stance = isAuto ? card.stance : undefined;
   const pct = Math.round(Math.min(1, Math.max(0, card.confidence)) * 100);
@@ -66,7 +66,7 @@ export function MaterialCardView({ card, projectId, onRemove, onInquire, inquiri
         )}
         {card.kind === 'link' && card.content.excerpt && <p className="exhibit-excerpt">{preview(card.content.excerpt)}</p>}
         {card.kind === 'image' && (
-          <img className="exhibit-img" src={`${materialImageBase(projectId)}${card.content.filename}`} alt={card.content.alt} />
+          <img className="exhibit-img" src={`${imageBase}${card.content.filename}`} alt={card.content.alt} />
         )}
         {(card.kind === 'text' || card.kind === 'md') && <p className="exhibit-text">{preview(card.content.body)}</p>}
         {card.kind === 'code' && <pre className="exhibit-code">{preview(card.content.snippet, 300)}</pre>}

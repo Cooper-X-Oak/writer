@@ -9,3 +9,8 @@ export function projectImageBase(id: string): string {
 export function materialImageBase(id: string): string {
   return `${DAEMON_URL}/api/projects/${encodeURIComponent(id)}/materials/images/`;
 }
+
+/** Base URL for the GLOBAL inbox image bytes (收件箱 images — project-independent). */
+export function inboxImageBase(): string {
+  return `${DAEMON_URL}/api/inbox/images/`;
+}
