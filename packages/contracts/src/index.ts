@@ -15,3 +15,4 @@ export type {
   CardLink, CardImage, CardMd, CardText, CardCode,
   MaterialCard, CorpusResponse,
 } from './api/corpus.js';
+export type { InboxResponse, PromoteResponse } from './api/inbox.js';

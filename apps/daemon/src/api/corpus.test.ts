@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import type { MaterialCard, Project, Hotspot } from '@app/contracts';
 import { createCorpusRouter, type CorpusRouterDeps } from './corpus.js';
 import type { MaterialsStore } from '../corpus/materials-store.js';
+import type { InboxStore } from '../inbox/inbox-store.js';
 import type { ProjectStore } from '../workspace/store.js';
 import type { HotspotStore } from '../collect/store.js';
 
@@ -25,6 +26,7 @@ function memMaterials(init: MaterialCard[] = []): MaterialsStore {
   return {
     list: () => Promise.resolve([...cards]),
     addCard: (_id, card) => { cards = [...cards.filter((c) => c.id !== card.id), card]; return Promise.resolve(card); },
+    importCard: (_id, card) => { cards = [...cards.filter((c) => c.id !== card.id), card]; return Promise.resolve(card); },
     addImage: (_id, _bytes, contentType, alt) => {
       const card: MaterialCard = { id: 'img1', kind: 'image', origin: 'manual', klass: '原始', confidence: 1, tags: [], note: '', addedAt: 'now', content: { filename: 'abc.png', alt, contentType } };
       cards = [...cards, card];
@@ -61,6 +63,57 @@ const inquiryHotspotStore: HotspotStore = {
 
 const json = (method: string, url: string, body: unknown) =>
   fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+function memInbox(init: MaterialCard[] = []): InboxStore {
+  let items = [...init];
+  return {
+    list: () => Promise.resolve([...items]),
+    addCard: (card) => { items = [...items.filter((c) => c.id !== card.id), card]; return Promise.resolve(card); },
+    addImage: () => Promise.resolve(undefined),
+    readImage: () => Promise.resolve({ bytes: Buffer.from([1, 2]), contentType: 'image/png' }),
+    remove: (cardId) => { items = items.filter((c) => c.id !== cardId); return Promise.resolve({ id: cardId }); },
+  };
+}
+const inboxCard = (id: string): MaterialCard => ({ id, kind: 'text', origin: 'manual', klass: '原始', confidence: 1, tags: [], note: '', addedAt: 'now', content: { body: id } });
+
+describe('POST /api/cases (lazy/explicit 立项)', () => {
+  it('requires a non-empty title (no phantom) and creates a project when given one', async () => {
+    const { url, close } = await serve({ projectStore: fakeProjectStore });
+    try {
+      expect((await json('POST', `${url}/cases`, {})).status).toBe(400);
+      expect((await json('POST', `${url}/cases`, { title: '   ' })).status).toBe(400);
+      expect((await json('POST', `${url}/cases`, { title: 'x'.repeat(201) })).status).toBe(400);
+      const ok = await json('POST', `${url}/cases`, { title: '远程办公' });
+      expect(ok.status).toBe(200);
+      expect((await ok.json() as { project: Project }).project).toEqual(PROJECT);
+    } finally { close(); }
+  });
+});
+
+describe('POST /api/projects/:id/materials/promote', () => {
+  it('promotes the requested inbox items into the corpus and removes only those that landed', async () => {
+    const inbox = memInbox([inboxCard('a'), inboxCard('b'), inboxCard('c')]);
+    const { url, close } = await serve({ store: memMaterials(), inboxStore: inbox });
+    try {
+      const res = await json('POST', `${url}/projects/c1/materials/promote`, { inboxIds: ['a', 'c', 'ghost'] });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { promoted: MaterialCard[]; skipped: string[] };
+      expect(body.promoted.map((c) => c.id).sort()).toEqual(['a', 'c']);
+      expect((await inbox.list()).map((c) => c.id)).toEqual(['b']); // a,c drained; b stays
+    } finally { close(); }
+  });
+
+  it('400 without inboxIds; 404 when the project is missing (nothing lands, inbox untouched)', async () => {
+    const inbox = memInbox([inboxCard('a')]);
+    const missing: MaterialsStore = { ...memMaterials(), importCard: () => Promise.resolve(undefined) };
+    const { url, close } = await serve({ store: missing, inboxStore: inbox });
+    try {
+      expect((await json('POST', `${url}/projects/c1/materials/promote`, {})).status).toBe(400);
+      expect((await json('POST', `${url}/projects/c1/materials/promote`, { inboxIds: ['a'] })).status).toBe(404);
+      expect((await inbox.list()).map((c) => c.id)).toEqual(['a']); // not lost on failure
+    } finally { close(); }
+  });
+});
 
 describe('POST /api/projects/corpus', () => {
   it('creates a corpus-stage project', async () => {
