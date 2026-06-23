@@ -144,7 +144,263 @@ a {
   position: relative;
 }
 
+/* ============================================================================
+ * P2 — the index card (物证 / exhibit slip). A pinned paper card whose STOCK +
+ * binding edge encode 原/补/对, origin shows as wax/graphite, stance as a thread
+ * tab, confidence as a graphite numeral. Driven by data-klass/origin/stance.
+ * ========================================================================== */
+.exhibit {
+  display: flex;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.exhibit-card {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 12px 11px;
+  background: var(--stock, var(--paper));
+  border: 1px solid var(--deckle);
+  border-left: 3px solid var(--edge, var(--rule));
+  border-radius: 2px 6px 6px 2px;
+  box-shadow: var(--lift-sm);
+  transform: rotate(var(--tilt, 0deg));
+  transform-origin: 50% 0;
+  transition:
+    transform var(--dur-card) var(--ease-expo),
+    box-shadow var(--dur-card) var(--ease-expo);
+}
+.exhibit-card[data-klass='原始'] {
+  --stock: var(--stock-primary);
+  --edge: var(--edge-primary);
+}
+.exhibit-card[data-klass='补充'] {
+  --stock: var(--stock-support);
+  --edge: var(--edge-support);
+}
+.exhibit-card[data-klass='对比'] {
+  --stock: var(--stock-contrast);
+  --edge: var(--edge-contrast);
+  border-right: 1px dashed var(--edge-contrast); /* a torn/contested right edge */
+}
+.exhibit-card:hover,
+.exhibit-card:focus-within {
+  transform: rotate(0deg) translateY(-1px);
+  box-shadow: var(--lift);
+}
+
+/* brass push-pin at the top */
+.exhibit-card::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, oklch(84% 0.07 75), oklch(56% 0.12 50));
+  box-shadow: 0 1px 1.5px oklch(24% 0.02 60 / 0.4);
+  z-index: 2;
+}
+
+/* origin seal: 询证 = red wax, 手工 = graphite outline */
+.exhibit-origin {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.exhibit-card[data-origin='auto'] .exhibit-origin {
+  background: var(--wax);
+  color: oklch(97% 0.02 80);
+  box-shadow: var(--lift-sm);
+}
+.exhibit-card[data-origin='manual'] .exhibit-origin {
+  border: 1.5px solid var(--graphite);
+  color: var(--graphite);
+}
+
+/* stance thread-tab on the right edge (询证 only) */
+.exhibit-stance {
+  position: absolute;
+  top: 30px;
+  right: -2px;
+  width: 3px;
+  height: 24px;
+  border-radius: 2px;
+}
+.exhibit-card[data-stance='corroborate'] .exhibit-stance {
+  background: var(--stance-corro);
+}
+.exhibit-card[data-stance='contradict'] .exhibit-stance {
+  background: var(--stance-contra);
+}
+.exhibit-card[data-stance='neutral'] .exhibit-stance {
+  background: var(--stance-neutral);
+}
+
+.exhibit-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.exhibit-klass {
+  font-weight: 700;
+  color: var(--edge);
+}
+.exhibit-sigil {
+  font-size: 11px;
+}
+.exhibit-sigil[data-stance='corroborate'] {
+  color: var(--stance-corro);
+}
+.exhibit-sigil[data-stance='contradict'] {
+  color: var(--stance-contra);
+}
+.exhibit-sigil[data-stance='neutral'] {
+  color: var(--stance-neutral);
+}
+
+.exhibit-link {
+  font-family: var(--font-chrome);
+  font-size: var(--text-card);
+  font-weight: 500;
+  color: var(--edge-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exhibit-link:hover {
+  text-decoration: underline;
+}
+.exhibit-excerpt {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.exhibit-text {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.exhibit-code {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: oklch(0% 0 0 / 0.04);
+  border-radius: 4px;
+  max-height: 92px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.exhibit-img {
+  max-width: 100%;
+  border: 3px solid var(--paper);
+  border-radius: 2px;
+  box-shadow: var(--lift-sm);
+  display: block;
+}
+
+/* 核验 note as a torn sticky strip (询证 only) */
+.exhibit-note {
+  margin: 2px -3px 0 -2px;
+  padding: 5px 8px;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  line-height: 1.4;
+  color: oklch(38% 0.05 80);
+  background: oklch(95% 0.06 95);
+  border-left: 2px solid oklch(78% 0.11 90);
+  box-shadow: var(--lift-sm);
+  transform: rotate(-0.5deg);
+}
+
+.exhibit-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 1px;
+}
+.stamp-btn {
+  padding: 3px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--string);
+  background: transparent;
+  border: 1.5px solid var(--string-soft);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background var(--dur-card) var(--ease-expo);
+}
+.stamp-btn:hover:not(:disabled) {
+  background: oklch(54% 0.2 27 / 0.08);
+}
+.stamp-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.exhibit-conf {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.exhibit-remove {
+  flex-shrink: 0;
+  padding: 8px 5px 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.exhibit-remove:hover {
+  color: var(--string);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .exhibit-card {
+    transform: none;
+  }
+  .exhibit-note {
+    transform: none;
+  }
   *,
   *::before,
   *::after {
