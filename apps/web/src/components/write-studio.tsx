@@ -26,9 +26,9 @@ import {
   deleteProject,
   fetchExportHtml,
 } from '../lib/api/projects';
-import { listHotspots, refreshHotspots, dismissHotspot } from '../lib/api/hotspots';
-import { listFeeds, addFeed, removeFeed } from '../lib/api/feeds';
 import { rewrite } from '../lib/api/rewrite';
+import { useHotspots } from '../hooks/useHotspots';
+import { useFeeds } from '../hooks/useFeeds';
 import { projectImageBase } from '../lib/api/base';
 import { getBridge } from '../lib/electron';
 import { ProjectSidebar } from './project-sidebar';
@@ -68,16 +68,16 @@ export function WriteStudio() {
   const [titleDraft, setTitleDraft] = useState('');
   const [exporting, setExporting] = useState(false);
   const [hasBridge, setHasBridge] = useState(false);
-  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [feeds, setFeeds] = useState<string[]>([]);
-  const [feedsBusy, setFeedsBusy] = useState(false);
   const [cards, setCards] = useState<MaterialCard[]>([]);
   const [corpusBusy, setCorpusBusy] = useState(false);
   const [useAgentInquiry, setUseAgentInquiry] = useState(false);
   const [inquiringId, setInquiringId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const corpusCreatingRef = useRef<Promise<string | undefined> | null>(null);
+
+  // Global feeds (hotspot wall + RSS) — extracted to hooks (A4). Behavior unchanged.
+  const hot = useHotspots();
+  const feedsCtl = useFeeds(setStatus);
 
   const running = phase === 'running';
 
@@ -94,63 +94,9 @@ export function WriteStudio() {
     }
   }, []);
 
-  const loadHotspots = useCallback(async (): Promise<void> => {
-    try {
-      setHotspots(await listHotspots());
-    } catch {
-      // best-effort; empty until the first refresh
-    }
-  }, []);
-
-  const loadFeeds = useCallback(async (): Promise<void> => {
-    try {
-      setFeeds(await listFeeds());
-    } catch {
-      // best-effort
-    }
-  }, []);
-
   useEffect(() => {
     void refreshProjects();
-    void loadHotspots();
-    void loadFeeds();
-  }, [refreshProjects, loadHotspots, loadFeeds]);
-
-  const doRefreshHotspots = async (): Promise<void> => {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      setHotspots(await refreshHotspots());
-    } catch {
-      // best-effort; keep the existing list on failure
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const onAddFeed = async (url: string): Promise<void> => {
-    if (feedsBusy) return;
-    setFeedsBusy(true);
-    try {
-      setFeeds(await addFeed(url));
-    } catch (err: unknown) {
-      setStatus(err instanceof Error ? err.message : String(err));
-    } finally {
-      setFeedsBusy(false);
-    }
-  };
-
-  const onRemoveFeed = async (url: string): Promise<void> => {
-    if (feedsBusy) return;
-    setFeedsBusy(true);
-    try {
-      setFeeds(await removeFeed(url));
-    } catch (err: unknown) {
-      setStatus(err instanceof Error ? err.message : String(err));
-    } finally {
-      setFeedsBusy(false);
-    }
-  };
+  }, [refreshProjects]);
 
   // Write INTO the open corpus project: stream a draft, then commit it (corpus → draft) and reopen
   // the now-drafted project (→ article view). Materials-first: gather, then write.
@@ -267,15 +213,6 @@ export function WriteStudio() {
       setStatus(err instanceof Error ? err.message : String(err));
     } finally {
       setInquiringId(null);
-    }
-  };
-
-  const onDismissHotspot = async (h: Hotspot): Promise<void> => {
-    setHotspots((list) => list.filter((x) => x.id !== h.id)); // optimistic
-    try {
-      await dismissHotspot(h.id);
-    } catch {
-      void loadHotspots(); // roll back to the server's truth on failure
     }
   };
 
@@ -657,17 +594,17 @@ export function WriteStudio() {
         onToggleAgent={setUseAgentInquiry}
       >
         <HotspotSidebar
-          hotspots={hotspots}
-          refreshing={refreshing}
+          hotspots={hot.hotspots}
+          refreshing={hot.refreshing}
           onSelect={onAddHotspot}
-          onRefresh={() => void doRefreshHotspots()}
-          onDismiss={(h) => void onDismissHotspot(h)}
+          onRefresh={() => void hot.refresh()}
+          onDismiss={(h) => void hot.dismiss(h)}
         >
           <FeedManager
-            feeds={feeds}
-            busy={feedsBusy}
-            onAdd={(url) => void onAddFeed(url)}
-            onRemove={(url) => void onRemoveFeed(url)}
+            feeds={feedsCtl.feeds}
+            busy={feedsCtl.busy}
+            onAdd={(url) => void feedsCtl.add(url)}
+            onRemove={(url) => void feedsCtl.remove(url)}
           />
         </HotspotSidebar>
       </CorpusSidebar>
