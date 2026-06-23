@@ -17,11 +17,11 @@ function formatDate(iso: string): string {
 
 export function ProjectSidebar({ projects, selectedId, onSelect, onNew, onDelete }: ProjectSidebarProps) {
   return (
-    <aside style={styles.aside}>
+    <aside className="folder-rail" style={styles.aside}>
       <button style={styles.newBtn} onClick={onNew}>
-        ＋ 新写作
+        ＋ 新建案卷
       </button>
-      <h2 style={styles.heading}>作品</h2>
+      <h2 style={styles.heading}>案卷</h2>
       {projects.length === 0 ? (
         <p style={styles.empty}>还没有作品，写完会自动保存到这里。</p>
       ) : (
@@ -59,27 +59,29 @@ export function ProjectSidebar({ projects, selectedId, onSelect, onNew, onDelete
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  aside: { width: 240, flexShrink: 0, borderRight: '1px solid #ececec', paddingRight: 16 },
+  aside: { width: 232, flexShrink: 0, borderRight: '1px solid var(--rule)', paddingRight: 16 },
   newBtn: {
     width: '100%',
-    padding: '8px 12px',
-    fontSize: 14,
+    padding: '9px 12px',
+    fontFamily: 'var(--font-chrome)',
+    fontSize: 13.5,
     fontWeight: 600,
-    color: '#111',
-    background: '#fff',
-    border: '1px solid #d0d0d0',
-    borderRadius: 8,
+    color: 'var(--ink)',
+    background: 'var(--paper)',
+    border: '1px solid var(--deckle)',
+    borderRadius: 'var(--radius)',
+    boxShadow: 'var(--lift-sm)',
     cursor: 'pointer',
   },
-  heading: { margin: '18px 0 8px', fontSize: 12, letterSpacing: 1, color: '#999', textTransform: 'uppercase' },
-  empty: { fontSize: 13, color: '#999', lineHeight: 1.6 },
-  list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  heading: { margin: '20px 0 8px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-meta)', letterSpacing: '0.14em', color: 'var(--ink-faint)', textTransform: 'uppercase' },
+  empty: { fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.6 },
+  list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 3 },
   row: { display: 'flex', alignItems: 'center', gap: 2 },
   del: {
     flexShrink: 0,
     border: 'none',
     background: 'transparent',
-    color: '#ccc',
+    color: 'var(--ink-faint)',
     cursor: 'pointer',
     fontSize: 12,
     padding: '0 6px',
@@ -91,21 +93,24 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 2,
     flex: 1,
     minWidth: 0,
-    padding: '8px 10px',
+    padding: '8px 10px 8px 11px',
     textAlign: 'left',
     background: 'transparent',
     border: 'none',
-    borderRadius: 8,
+    borderLeft: '2px solid transparent', // folder-tab edge, colored when active
+    borderRadius: '0 var(--radius) var(--radius) 0',
     cursor: 'pointer',
+    transition: 'background var(--dur-card) var(--ease-expo)',
   },
-  itemActive: { background: '#f0f0f0' },
+  itemActive: { background: 'var(--paper)', borderLeftColor: 'var(--edge-primary)', boxShadow: 'var(--lift-sm)' },
   title: {
-    fontSize: 14,
-    color: '#1a1a1a',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14.5,
+    color: 'var(--ink)',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-    maxWidth: 210,
+    maxWidth: 200,
   },
-  time: { fontSize: 11, color: '#aaa' },
+  time: { fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-faint)' },
 };
