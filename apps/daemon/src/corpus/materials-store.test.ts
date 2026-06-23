@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { MaterialCard } from '@app/contracts';
 import { createMaterialsStore, MAX_CARDS, type MaterialsStore } from './materials-store.js';
 import { textCard } from './normalize.js';
 import { materialsPath, manifestPath, projectDir } from '../workspace/paths.js';
@@ -89,5 +90,25 @@ describe('materials-store cap', () => {
     await writeFile(materialsPath(projectDir(root, 'p1')), JSON.stringify({ cards: seeded }), 'utf8');
     expect(await store.addCard('p1', card('overflow'))).toBeUndefined();
     expect(await store.addCard('p1', { ...card('seed-0'), note: 'still ok' })).toBeDefined();
+  });
+});
+
+describe('materials-store importCard (inbox → corpus promote)', () => {
+  it('imports a card keeping its id; undefined for a missing project', async () => {
+    const c = card('imp');
+    expect(await store.importCard('p1', c)).toEqual(c);
+    expect((await store.list('p1')).map((x) => x.id)).toContain('imp');
+    expect(await store.importCard('ghost', card('x'))).toBeUndefined();
+  });
+
+  it('copies the image blob under the card filename so readImage resolves it', async () => {
+    const bytes = Buffer.from([1, 2, 3, 4]);
+    const img: MaterialCard = {
+      id: 'i', kind: 'image', origin: 'manual', klass: '原始', confidence: 1, tags: [], note: '',
+      addedAt: 'now', content: { filename: 'deadbeefdeadbeef.png', alt: 'a', contentType: 'image/png' },
+    };
+    expect((await store.importCard('p1', img, bytes))?.id).toBe('i');
+    const read = await store.readImage('p1', 'deadbeefdeadbeef.png');
+    expect(read?.bytes.equals(bytes)).toBe(true);
   });
 });

@@ -13,6 +13,9 @@ import express, { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { MaterialCard } from '@app/contracts';
 import { defaultMaterialsStore, type MaterialsStore } from '../corpus/materials-store.js';
+import { defaultInboxStore, MAX_INBOX, type InboxStore } from '../inbox/inbox-store.js';
+
+const MAX_TITLE_LEN = 200;
 import { createProjectStore, type ProjectStore } from '../workspace/store.js';
 import { defaultHotspotStore, type HotspotStore } from '../collect/store.js';
 import { linkCard, textCard, mdCard, codeCard, hotspotToCard } from '../corpus/normalize.js';
@@ -34,13 +37,15 @@ export interface CorpusRouterDeps {
   store?: MaterialsStore;
   projectStore?: ProjectStore;
   hotspotStore?: HotspotStore;
+  /** GLOBAL inbox — the promote source (staging → project). */
+  inboxStore?: InboxStore;
   /** Tier-B 询证 classifier; only invoked when the request opts in (useAgent). */
   classifier?: AgentClassifier;
 }
 
 /** Build a card from a manual JSON drop. Returns undefined for an unknown kind, empty content, or an
- *  unfetchable link url (linkCard re-runs the SSRF guard). */
-function buildManualCard(body: Record<string, unknown>): MaterialCard | undefined {
+ *  unfetchable link url (linkCard re-runs the SSRF guard). Reused by the global inbox router. */
+export function buildManualCard(body: Record<string, unknown>): MaterialCard | undefined {
   const str = (v: unknown): string => (typeof v === 'string' ? v : '');
   switch (body.kind) {
     case 'link': {
@@ -59,6 +64,7 @@ export function createCorpusRouter(deps: CorpusRouterDeps = {}): Router {
   const store = deps.store ?? defaultMaterialsStore;
   const projectStore = deps.projectStore ?? createProjectStore();
   const hotspotStore = deps.hotspotStore ?? defaultHotspotStore;
+  const inboxStore = deps.inboxStore ?? defaultInboxStore;
   const classifier = deps.classifier ?? defaultAgentClassifier;
   const router = Router();
 
@@ -69,6 +75,60 @@ export function createCorpusRouter(deps: CorpusRouterDeps = {}): Router {
       .createCorpus({ title })
       .then((project) => res.json({ project }))
       .catch(() => res.status(500).json({ error: 'failed to create corpus' }));
+  });
+
+  // Open a 案卷 (立项) — the explicit, LAZY project creation. Unlike /projects/corpus this REQUIRES a
+  // non-empty title, so a project is born only on a deliberate commit → no phantom "未命名资料区".
+  router.post('/cases', (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { title?: unknown };
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (!title || title.length > MAX_TITLE_LEN) {
+      res.status(400).json({ error: `a non-empty title (≤ ${String(MAX_TITLE_LEN)} chars) is required to open a 案卷` });
+      return;
+    }
+    projectStore
+      .createCorpus({ title })
+      .then((project) => res.json({ project }))
+      .catch(() => res.status(500).json({ error: 'failed to open case' }));
+  });
+
+  // Promote (拣选) inbox items into this project's corpus. Reads the inbox, imports each into the
+  // corpus keeping its id (idempotent), copies image blobs, and removes ONLY the items that landed
+  // (so a missing project / full corpus never loses inbox data).
+  router.post('/projects/:id/materials/promote', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id : '';
+    const body = (req.body ?? {}) as { inboxIds?: unknown };
+    const inboxIds = Array.isArray(body.inboxIds) ? body.inboxIds.filter((x): x is string => typeof x === 'string') : undefined;
+    if (!inboxIds || inboxIds.length === 0 || inboxIds.length > MAX_INBOX) {
+      res.status(400).json({ error: `inboxIds (1..${String(MAX_INBOX)} strings) is required` });
+      return;
+    }
+    void (async () => {
+      try {
+        const wanted = new Set(inboxIds);
+        const items = (await inboxStore.list()).filter((c) => wanted.has(c.id));
+        const promoted: MaterialCard[] = [];
+        const skipped: string[] = [];
+        for (const card of items) {
+          const blob = card.kind === 'image' ? (await inboxStore.readImage(card.content.filename))?.bytes : undefined;
+          const saved = await store.importCard(id, card, blob);
+          if (saved) {
+            promoted.push(saved);
+            await inboxStore.remove(card.id); // remove from inbox only after it landed
+          } else {
+            skipped.push(card.id);
+          }
+        }
+        // Items were requested but none landed → the project is missing or the corpus is full.
+        if (items.length > 0 && promoted.length === 0) {
+          res.status(404).json({ error: 'project not found or corpus full' });
+          return;
+        }
+        res.json({ promoted, skipped });
+      } catch {
+        res.status(500).json({ error: 'failed to promote' });
+      }
+    })();
   });
 
   router.get('/projects/:id/materials', (req: Request, res: Response) => {

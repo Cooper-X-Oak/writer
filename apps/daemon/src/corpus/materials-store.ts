@@ -42,6 +42,9 @@ export interface MaterialsStore {
   /** Upsert by id (replace if present, else append) — keeps from-hotspot re-import idempotent. */
   addCard(projectId: string, card: MaterialCard): Promise<MaterialCard | undefined>;
   addImage(projectId: string, bytes: Buffer, contentType: string, alt: string): Promise<MaterialCard | undefined>;
+  /** Promote a pre-built card (keeping its id) into the corpus, copying its image blob if supplied.
+   *  Used by inbox→project promote so ids stay stable (idempotent) and the blob follows the card. */
+  importCard(projectId: string, card: MaterialCard, blob?: Buffer): Promise<MaterialCard | undefined>;
   readImage(projectId: string, filename: string): Promise<{ bytes: Buffer; contentType: string } | undefined>;
   remove(projectId: string, cardId: string): Promise<{ id: string } | undefined>;
 }
@@ -142,6 +145,17 @@ export function createMaterialsStore(deps: MaterialsStoreDeps = {}): MaterialsSt
       await atomicWriteBuffer(join(materialsImagesDir(dir), filename), bytes); // blob FIRST
       const card = imageCard({ filename, contentType, alt }, { now: deps.now, genId: deps.genId });
       return upsert(dir, card); // index LAST
+    },
+
+    async importCard(projectId, card, blob) {
+      if (!isSafeProjectId(projectId)) return undefined;
+      const dir = projectDir(root, projectId);
+      if (!(await projectExists(dir))) return undefined;
+      // For an image card, copy the blob under its (sha-named) filename so readImage resolves here.
+      if (card.kind === 'image' && blob && isSafeImageName(card.content.filename)) {
+        await atomicWriteBuffer(join(materialsImagesDir(dir), card.content.filename), blob); // blob FIRST
+      }
+      return upsert(dir, card); // index LAST, keeps the card's existing id
     },
 
     async readImage(projectId, filename) {

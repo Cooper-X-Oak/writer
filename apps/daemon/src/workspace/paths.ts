@@ -22,6 +22,10 @@ export const HOTSPOTS_FILE = 'hotspots.json';
 export const FEEDS_FILE = 'feeds.json';
 /** Dismissed/hidden hotspot ids — a sidecar at the data-dir root (overlay on hotspots.json). */
 export const DISMISSED_FILE = 'dismissed.json';
+/** GLOBAL planning-desk inbox (project-independent staging) — a sidecar at the data-dir root. */
+export const INBOX_FILE = 'inbox.json';
+/** GLOBAL inbox image blobs (sha256-named) — a dir at the data-dir root (sibling of projects/). */
+export const INBOX_IMAGES_DIR = 'inbox-images';
 
 /** Base data dir for all local state. Override with HOTSPOT_DATA_DIR (Electron passes its userData). */
 export function dataDir(): string {
@@ -45,6 +49,16 @@ export function feedsPath(base: string = dataDir()): string {
 /** Path to the dismissed-hotspots sidecar (dataDir()/dismissed.json). */
 export function dismissedPath(base: string = dataDir()): string {
   return join(base, DISMISSED_FILE);
+}
+
+/** Path to the GLOBAL inbox sidecar (dataDir()/inbox.json). */
+export function inboxPath(base: string = dataDir()): string {
+  return join(base, INBOX_FILE);
+}
+
+/** Path to the GLOBAL inbox image dir (dataDir()/inbox-images/). */
+export function inboxImagesDir(base: string = dataDir()): string {
+  return join(base, INBOX_IMAGES_DIR);
 }
 
 export function projectDir(root: string, id: string): string {
