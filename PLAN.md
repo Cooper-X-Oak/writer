@@ -357,3 +357,29 @@ land: hotspot **excerpt** preview (W2), **restore** endpoint / undo (W1/W5), **c
 + **draft-preserve-on-fail** (W4), keyboard-accessible block selection (W5). Daemon-offline
 gating and streaming-liveness cues are interaction baselines to fix as those areas are touched.
 
+## Phase 3 — Staged workflow refactor (2026-06-23 · [ADR-0002](docs/adr/0002-staged-workflow-navigation.md))
+
+Formalize the implicit `project.stage` FSM into a **staged-navigation** app (route-as-state + hub-and-spoke
++ staging→promote + container/presentational slices). Kills the phantom "未命名资料区"; makes the 资料区
+the center stage while gathering and a right 来源栏 only when writing. Also delivers the 案台 visual
+direction (ADR-0002 paradigm table). Strangler-fig: build new structure alongside the live `write-studio.tsx`,
+migrate incrementally, delete it last. The app boots & ships at every phase boundary.
+
+| Phase | One PR | Risk |
+|---|---|---|
+| A1 | inbox contract (`InboxResponse { items: MaterialCard[] }`) | low |
+| A2 | global inbox store + paths (`dataDir()/inbox.json`, mirrors collect/store) | low |
+| A3 | inbox + `POST /api/cases` (title-guarded) + `…/materials/promote` routes | med (SSRF re-check) |
+| A4 | extract view-model hooks from write-studio (no behavior change) | med |
+| A5 | lazy/explicit case creation + planning state → **phantom dies** | high |
+| A6 | route skeleton (`p/[id]/{,,outline,write}` server shells + CaseProvider + Stepper) | med (RSC) |
+| A7 | extract `PlanningDesk` (`/` = hub) | med |
+| A8 | extract `CorpusBoard` (board center) + `ManuscriptDesk` (+ `SourceRail` rail) | high (W2/editing) |
+| A9 | delete `write-studio.tsx` (old structure removed last) | med |
+| A10 | W3/W4 seams: `OutlineDesk` stub + `PATCH /api/projects/:id/stage` | low |
+
+Done first: merge W2 (#27) + design P1 (#28) + P2 (#29) to `main` (A0, complete). Smallest first code PR =
+A1; the de-risking PR = A2+A3 (daemon-only, offline-testable). **Deferred** (clean seams only): W3 大纲
+logic, W4/W5 来源栏 citation logic, W6 导出 (`exported` is NOT a `ProjectStage` — export stays an
+idempotent action on a draft). Electron unchanged (one window, loads `/`).
+
