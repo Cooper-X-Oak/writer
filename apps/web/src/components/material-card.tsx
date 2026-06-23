@@ -1,6 +1,7 @@
 'use client';
 
-import type { MaterialCard } from '@app/contracts';
+import type { CSSProperties } from 'react';
+import type { MaterialCard, CardStance } from '@app/contracts';
 import { hostnameOf } from '../lib/format/provenance';
 import { materialImageBase } from '../lib/api/base';
 
@@ -15,85 +16,83 @@ interface MaterialCardViewProps {
 }
 
 const KIND_LABEL: Record<MaterialCard['kind'], string> = { link: '链接', image: '图片', md: 'MD', text: '文本', code: '代码' };
-const STANCE_LABEL: Record<NonNullable<MaterialCard['stance']>, string> = {
-  corroborate: '佐证',
-  contradict: '反驳',
-  neutral: '相关',
-};
+const STANCE_SIGIL: Record<CardStance, string> = { corroborate: '＋', contradict: '≠', neutral: '·' };
+const ORIGIN_GLYPH = { auto: '⌖', manual: '✎' } as const;
+const ORIGIN_TITLE = { auto: '询证 · 自动采集', manual: '手工添加' } as const;
 
 function preview(s: string, max = 200): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-/** One material card in the 资料区 rail. kind-switches the body; user content is rendered as React
- *  text (auto-escaped) — never dangerouslySetInnerHTML. Auto (询证) cards also show a cross-verify
- *  stance, a confidence bar, and their 核验 note. A non-image card can seed a further 询证 run. */
+/** Deterministic micro-rotation (±1.5°) seeded by the card id, so the board feels pinned-by-hand
+ *  without any random source. Straightens to 0° on hover (CSS). */
+function tiltOf(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) % 997;
+  return ((h / 997) - 0.5) * 2 * 1.5;
+}
+
+/** One material card on the 资料区 cork board, rendered as a pinned EXHIBIT SLIP. Stock + binding edge
+ *  encode 原/补/对; origin is a wax (询证) or graphite (手工) seal; stance is a thread tab + sigil;
+ *  confidence a graphite numeral. User content is React text (auto-escaped) — never innerHTML. */
 export function MaterialCardView({ card, projectId, onRemove, onInquire, inquiring }: MaterialCardViewProps) {
   const isAuto = card.origin === 'auto';
-  const stance = card.stance ? STANCE_LABEL[card.stance] : null;
+  const stance = isAuto ? card.stance : undefined;
   const pct = Math.round(Math.min(1, Math.max(0, card.confidence)) * 100);
+  const cardStyle = { '--tilt': `${tiltOf(card.id).toFixed(2)}deg` } as CSSProperties;
+
   return (
-    <li style={styles.row}>
-      <div style={styles.card}>
-        <div style={styles.meta}>
-          <span style={styles.kind}>{KIND_LABEL[card.kind]}</span>
-          <span style={styles.chip}>{isAuto ? '询证' : '手工'}</span>
-          <span style={card.klass === '对比' ? styles.klassContrast : styles.klass}>{card.klass}</span>
-          {stance && <span style={card.stance === 'contradict' ? styles.stanceContra : styles.stance}>{stance}</span>}
+    <li className="exhibit">
+      <div className="exhibit-card" data-klass={card.klass} data-origin={card.origin} data-stance={stance} style={cardStyle}>
+        <span className="exhibit-origin" title={ORIGIN_TITLE[card.origin]} aria-hidden>
+          {ORIGIN_GLYPH[card.origin]}
+        </span>
+        {stance && <span className="exhibit-stance" aria-hidden />}
+
+        <div className="exhibit-meta">
+          <span>{KIND_LABEL[card.kind]}</span>
+          <span className="exhibit-klass">{card.klass}</span>
+          {stance && (
+            <span className="exhibit-sigil" data-stance={stance} title={stance}>
+              {STANCE_SIGIL[stance]}
+            </span>
+          )}
         </div>
+
         {card.kind === 'link' && (
-          <a style={styles.link} href={card.content.url} target="_blank" rel="noopener noreferrer" title={card.content.url}>
+          <a className="exhibit-link" href={card.content.url} target="_blank" rel="noopener noreferrer" title={card.content.url}>
             {card.content.title || hostnameOf(card.content.url)} ↗
           </a>
         )}
-        {card.kind === 'link' && card.content.excerpt && <p style={styles.excerpt}>{preview(card.content.excerpt)}</p>}
+        {card.kind === 'link' && card.content.excerpt && <p className="exhibit-excerpt">{preview(card.content.excerpt)}</p>}
         {card.kind === 'image' && (
-          <img style={styles.img} src={`${materialImageBase(projectId)}${card.content.filename}`} alt={card.content.alt} />
+          <img className="exhibit-img" src={`${materialImageBase(projectId)}${card.content.filename}`} alt={card.content.alt} />
         )}
-        {(card.kind === 'text' || card.kind === 'md') && <p style={styles.text}>{preview(card.content.body)}</p>}
-        {card.kind === 'code' && <pre style={styles.code}>{preview(card.content.snippet, 300)}</pre>}
-        {isAuto && card.note && <p style={styles.note}>核验：{card.note}</p>}
-        {isAuto && (
-          <div style={styles.confRow} title={`置信度 ${String(pct)}%`}>
-            <span style={styles.confTrack}>
-              <span style={{ ...styles.confFill, width: `${String(pct)}%` }} />
-            </span>
-            <span style={styles.confPct}>{pct}%</span>
+        {(card.kind === 'text' || card.kind === 'md') && <p className="exhibit-text">{preview(card.content.body)}</p>}
+        {card.kind === 'code' && <pre className="exhibit-code">{preview(card.content.snippet, 300)}</pre>}
+
+        {isAuto && card.note && <p className="exhibit-note">核验：{card.note}</p>}
+
+        {(onInquire || isAuto) && (
+          <div className="exhibit-foot">
+            {onInquire && card.kind !== 'image' ? (
+              <button className="stamp-btn" disabled={inquiring} onClick={() => onInquire(card.id)}>
+                {inquiring ? '询证中…' : '盖章找佐证'}
+              </button>
+            ) : (
+              <span />
+            )}
+            {isAuto && (
+              <span className="exhibit-conf" title={`置信度 ${String(pct)}%`}>
+                ·{pct}
+              </span>
+            )}
           </div>
         )}
-        {onInquire && card.kind !== 'image' && (
-          <button style={styles.inquire} disabled={inquiring} onClick={() => onInquire(card.id)}>
-            {inquiring ? '询证中…' : '找佐证 / 对比'}
-          </button>
-        )}
       </div>
-      <button style={styles.remove} aria-label={`移除这张${KIND_LABEL[card.kind]}卡`} title="移除" onClick={() => onRemove(card.id)}>
+      <button className="exhibit-remove" aria-label={`移除这张${KIND_LABEL[card.kind]}卡`} title="移除" onClick={() => onRemove(card.id)}>
         ✕
       </button>
     </li>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  row: { display: 'flex', alignItems: 'flex-start', gap: 2 },
-  card: { flex: 1, minWidth: 0, padding: '8px 10px', border: '1px solid #ececec', borderRadius: 8, background: '#fff', display: 'flex', flexDirection: 'column', gap: 4 },
-  meta: { display: 'flex', alignItems: 'center', gap: 6 },
-  kind: { fontSize: 10, fontWeight: 700, color: '#fff', background: '#555', padding: '1px 5px', borderRadius: 4 },
-  chip: { fontSize: 10, color: '#888', border: '1px solid #e0e0e0', padding: '0 5px', borderRadius: 4 },
-  klass: { fontSize: 10, color: '#aaa' },
-  klassContrast: { fontSize: 10, fontWeight: 700, color: '#b45309' },
-  stance: { fontSize: 10, color: '#16a34a', border: '1px solid #bbf7d0', padding: '0 4px', borderRadius: 4 },
-  stanceContra: { fontSize: 10, color: '#dc2626', border: '1px solid #fecaca', padding: '0 4px', borderRadius: 4 },
-  note: { fontSize: 11.5, color: '#7c6f00', margin: 0, fontStyle: 'italic' },
-  confRow: { display: 'flex', alignItems: 'center', gap: 6 },
-  confTrack: { flex: 1, height: 4, background: '#eee', borderRadius: 2, overflow: 'hidden' },
-  confFill: { display: 'block', height: '100%', background: '#2563eb' },
-  confPct: { fontSize: 10, color: '#999', minWidth: 28, textAlign: 'right' },
-  inquire: { alignSelf: 'flex-start', marginTop: 2, fontSize: 11, color: '#2563eb', background: 'transparent', border: '1px solid #c7dbff', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' },
-  link: { fontSize: 13, color: '#2563eb', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  excerpt: { fontSize: 12, color: '#777', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
-  text: { fontSize: 12.5, color: '#333', margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
-  code: { fontSize: 11, color: '#333', background: '#f6f6f6', borderRadius: 6, padding: 8, margin: 0, maxHeight: 96, overflow: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
-  img: { maxWidth: '100%', borderRadius: 6, display: 'block' },
-  remove: { flexShrink: 0, border: 'none', background: 'transparent', color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '8px 6px 0', lineHeight: 1 },
-};

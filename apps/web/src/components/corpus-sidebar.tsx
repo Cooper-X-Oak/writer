@@ -67,6 +67,6 @@ const styles: Record<string, React.CSSProperties> = {
   heading: { position: 'relative', zIndex: 1, margin: 0, fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em', color: 'var(--ink)' },
   agentToggle: { position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-muted)', cursor: 'pointer' },
   empty: { position: 'relative', zIndex: 1, fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.6, margin: 0 },
-  list: { position: 'relative', zIndex: 1, listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+  list: { position: 'relative', zIndex: 1, listStyle: 'none', margin: '2px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 13 },
   feeder: { position: 'relative', zIndex: 1, borderTop: '1px solid var(--board-cork-2)', paddingTop: 10, marginTop: 4 },
 };
